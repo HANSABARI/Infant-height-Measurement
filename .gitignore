@@ -1,0 +1,20 @@
+# 가상환경
+venv/
+.venv/
+grow_up/
+
+# 파이참 설정
+.idea/
+
+# 파이썬 캐시
+__pycache__/
+*.pyc
+
+# AI 모델 및 데이터
+*.pt
+*.onnx
+app/models/*.pt
+debug_images/
+
+# 맥(Mac) 시스템 파일 (필수!)
+.DS_Store
