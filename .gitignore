@@ -13,8 +13,14 @@ __pycache__/
 # AI 모델 및 데이터
 *.pt
 *.onnx
-app/models/*.pt
+app/models/yolov*.pt
 debug_images/
 
 # 맥(Mac) 시스템 파일 (필수!)
 .DS_Store
+
+# AI Training Files
+dataset/
+runs/
+yolov8*.pt
+train.py

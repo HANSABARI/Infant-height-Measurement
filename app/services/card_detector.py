@@ -8,7 +8,7 @@ class CardDetector:
     def __init__(self, model_path: str = None):
         if model_path is None:
             base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            model_path = os.path.join(base_dir, "models", "yolov8m.pt")
+            model_path = os.path.join(base_dir, "models", "best_v1.pt")
 
         print(f"Loading YOLO model from: {model_path}")
         self.model = YOLO(model_path)
@@ -16,8 +16,8 @@ class CardDetector:
         # [수정 1] 기준 객체를 '신용카드'에서 '핸드폰(일반적인 크기)'으로 변경
         # 나중에 카드 학습 후에는 다시 8.56으로 돌려야 합니다.
         # 일반적인 스마트폰 세로 길이 (약 15cm 가정)
-        self.CARD_WIDTH_CM = 15.0
-        self.CARD_HEIGHT_CM = 7.2
+        self.CARD_WIDTH_CM = 8.56
+        self.CARD_HEIGHT_CM = 5.4
 
     def detect(self, img: np.ndarray) -> dict:
         """
@@ -25,8 +25,8 @@ class CardDetector:
         """
         # [수정 2] classes=[67] 추가
         # 0: 사람, 67: 핸드폰 (COCO 데이터셋 기준)
-        # 이렇게 하면 사람이 있어도 무시하고 핸드폰만 찾습니다.
-        results = self.model(img, conf=0.3, classes=[67], verbose=False)
+        # 이렇게 하면 사람이 있어도 무시하고 카드만 찾습니다.
+        results = self.model(img, conf=0.3, classes=[0], verbose=False)
 
         if not results or len(results[0].boxes) == 0:
             return {"detected": False, "px_per_cm": 0.0, "confidence": 0.0, "bbox": []}
