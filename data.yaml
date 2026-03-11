@@ -1,0 +1,13 @@
+train: ../train/images
+val: ../valid/images
+test: ../test/images
+
+nc: 1
+names: ['card']
+
+roboflow:
+  workspace: carddataset-4nrr2
+  project: card_detection-tztvz
+  version: 2
+  license: MIT
+  url: https://universe.roboflow.com/carddataset-4nrr2/card_detection-tztvz/dataset/2

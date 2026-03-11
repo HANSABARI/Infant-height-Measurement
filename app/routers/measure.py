@@ -5,7 +5,7 @@ import os
 from datetime import datetime
 
 # 서비스 모듈 (우리가 만든 AI 부품들)
-from app.services.card_detector import CardDetector
+from app.services.card_detector_rtm import CardDetector
 from app.services.pose_estimator import PoseEstimator
 from app.services.height_calculator import HeightCalculator
 from app.services.visualizer import Visualizer

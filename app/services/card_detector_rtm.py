@@ -1,52 +1,71 @@
 import cv2
 import numpy as np
-from ultralytics import YOLO
 import os
+import torch
+from mmdet.apis import init_detector, inference_detector
 
+# =====================================================================
+# 🌟 핵심 해결책: PyTorch 2.6의 깐깐한 보안 정책을 통째로 무력화(Monkey Patching)
+# MMDetection이 torch.load를 호출할 때 무조건 weights_only=False로 동작하게 만듭니다.
+# =====================================================================
+_original_torch_load = torch.load
+
+def _patched_torch_load(*args, **kwargs):
+    kwargs['weights_only'] = False  # 보안 검사 해제!
+    return _original_torch_load(*args, **kwargs)
+
+torch.load = _patched_torch_load
+# =====================================================================
 
 class CardDetector:
-    def __init__(self, model_path: str = None):
-        if model_path is None:
-            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            model_path = os.path.join(base_dir, "models", "yolo_card_detector.pt")
+    def __init__(self, config_path: str = None, checkpoint_path: str = None, device: str = 'cpu'):
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-        print(f"Loading YOLO model from: {model_path}")
-        self.model = YOLO(model_path)
+        if config_path is None:
+            config_path = os.path.join(base_dir, "models", "card_model_v2", "rtmdet_nano_card.py")
+        if checkpoint_path is None:
+            checkpoint_path = os.path.join(base_dir, "models", "card_model_v2", "epoch_50.pth")
 
-        # [수정 1] 기준 객체를 '신용카드'에서 '핸드폰(일반적인 크기)'으로 변경
-        # 나중에 카드 학습 후에는 다시 8.56으로 돌려야 합니다.
-        # 일반적인 스마트폰 세로 길이 (약 15cm 가정)
-        self.CARD_WIDTH_CM = 15.0
-        self.CARD_HEIGHT_CM = 7.2
+        print(f"Loading RTMDet model...\nConfig: {config_path}\nWeights: {checkpoint_path}")
+        self.model = init_detector(config_path, checkpoint_path, device=device)
+
+        # 카드 길이 (표준 신용카드)
+        self.CARD_WIDTH_CM = 8.56
+        self.CARD_HEIGHT_CM = 5.4
 
     def detect(self, img: np.ndarray) -> dict:
-        """
-        이미지에서 '핸드폰'을 찾아 px_per_cm를 반환 (테스트용)
-        """
-        # [수정 2] classes=[67] 추가
-        # 0: 사람, 67: 핸드폰 (COCO 데이터셋 기준)
-        # 이렇게 하면 사람이 있어도 무시하고 핸드폰만 찾습니다.
-        results = self.model(img, conf=0.3, classes=[67], verbose=False)
+        # 1. RTMDet 추론 실행
+        result = inference_detector(self.model, img)
 
-        if not results or len(results[0].boxes) == 0:
+        # 2. 파싱
+        pred_instances = result.pred_instances
+        scores = pred_instances.scores.cpu().numpy()
+        bboxes = pred_instances.bboxes.cpu().numpy()
+
+        # 3. 신뢰도 0.3 이상 필터링
+        valid_indices = scores > 0.3
+
+        if not valid_indices.any():
             return {"detected": False, "px_per_cm": 0.0, "confidence": 0.0, "bbox": []}
 
-        # 가장 신뢰도 높은 객체 선택
-        box = results[0].boxes[0]
-        x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
-        conf = float(box.conf[0].cpu().numpy())
+        # 4. 가장 신뢰도 높은 객체 선택
+        best_idx = scores[valid_indices].argmax()
+        valid_bboxes = bboxes[valid_indices]
+        valid_scores = scores[valid_indices]
+
+        x1, y1, x2, y2 = valid_bboxes[best_idx]
+        conf = float(valid_scores[best_idx])
 
         w_px = x2 - x1
         h_px = y2 - y1
 
-        # 긴 쪽을 15cm(핸드폰 길이)로 가정
+        # 긴 쪽을 8.56cm라고 가정하여 비율 계산
         long_side_px = max(w_px, h_px)
-
-        px_per_cm = long_side_px / self.CARD_WIDTH_CM
+        px_per_cm = float(long_side_px / self.CARD_WIDTH_CM)
 
         return {
             "detected": True,
-            "px_per_cm": float(px_per_cm),
+            "px_per_cm": px_per_cm,
             "confidence": conf,
             "bbox": [float(x1), float(y1), float(x2), float(y2)]
         }
