@@ -19,7 +19,7 @@ debug_images/
 # 맥(Mac) 시스템 파일 (필수!)
 .DS_Store
 
-
+markdown
 *.pth
 dataset/
 debug_images/

@@ -1,7 +1,15 @@
+ultralytics
+opencv-python
 fastapi
 uvicorn[standard]
 python-multipart
-numpy
 pydantic
+torch==2.10.0
+torchvision==0.25.0
+numpy
+opencv-python==4.13.0
 ultralytics
-opencv-python
+onnxruntime
+rtmlib
+openmim
+mmengine==0.10.7

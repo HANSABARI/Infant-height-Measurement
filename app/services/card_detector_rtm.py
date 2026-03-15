@@ -4,14 +4,12 @@ import os
 import torch
 from mmdet.apis import init_detector, inference_detector
 
-# =====================================================================
-# 🌟 핵심 해결책: PyTorch 2.6의 깐깐한 보안 정책을 통째로 무력화(Monkey Patching)
-# MMDetection이 torch.load를 호출할 때 무조건 weights_only=False로 동작하게 만듭니다.
+# Monkey Patching(weights_only=False)
 # =====================================================================
 _original_torch_load = torch.load
 
 def _patched_torch_load(*args, **kwargs):
-    kwargs['weights_only'] = False  # 보안 검사 해제!
+    kwargs['weights_only'] = False
     return _original_torch_load(*args, **kwargs)
 
 torch.load = _patched_torch_load
