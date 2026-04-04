@@ -1,4 +1,4 @@
-auto_scale_lr = dict(base_batch_size=16, enable=False)
+auto_scale_lr = dict(base_batch_size=16, enable=True)
 backend_args = None
 base_lr = 0.004
 checkpoint = 'https://download.openmmlab.com/mmdetection/v3.0/rtmdet/cspnext_rsb_pretrain/cspnext-tiny_imagenet_600e.pth'
@@ -49,7 +49,7 @@ custom_hooks = [
         ],
         type='PipelineSwitchHook'),
 ]
-data_root = 'dataset/card_detection-2/'
+data_root = 'C:/Users/ryuyoonmin/python_project/jaram_height/app/dataset/card_detection-2/'
 dataset_type = 'CocoDataset'
 default_hooks = dict(
     checkpoint=dict(
@@ -198,7 +198,8 @@ test_dataloader = dict(
         ann_file='test/_annotations.coco.json',
         backend_args=None,
         data_prefix=dict(img='test/'),
-        data_root='dataset/card_detection-2/',
+        data_root=
+        'C:/Users/ryuyoonmin/python_project/jaram_height/app/dataset/card_detection-2/',
         metainfo=dict(classes=('card', )),
         pipeline=[
             dict(backend_args=None, type='LoadImageFromFile'),
@@ -231,12 +232,13 @@ test_dataloader = dict(
         test_mode=True,
         type='CocoDataset'),
     drop_last=False,
-    num_workers=10,
+    num_workers=4,
     persistent_workers=True,
     sampler=dict(_scope_='mmdet', shuffle=False, type='DefaultSampler'))
 test_evaluator = dict(
     _scope_='mmdet',
-    ann_file='dataset/card_detection-2/test/_annotations.coco.json',
+    ann_file=
+    'C:/Users/ryuyoonmin/python_project/jaram_height/app/dataset/card_detection-2/test/_annotations.coco.json',
     backend_args=None,
     format_only=False,
     metric='bbox',
@@ -284,18 +286,19 @@ train_cfg = dict(
             1,
         ),
     ],
-    max_epochs=50,
+    max_epochs=300,
     type='EpochBasedTrainLoop',
-    val_interval=100)
+    val_interval=10)
 train_dataloader = dict(
     batch_sampler=None,
-    batch_size=8,
+    batch_size=32,
     dataset=dict(
         _scope_='mmdet',
         ann_file='train/_annotations.coco.json',
         backend_args=None,
         data_prefix=dict(img='train/'),
-        data_root='dataset/card_detection-2/',
+        data_root=
+        'C:/Users/ryuyoonmin/python_project/jaram_height/app/dataset/card_detection-2/',
         filter_cfg=dict(filter_empty_gt=True, min_size=32),
         metainfo=dict(classes=('card', )),
         pipeline=[
@@ -359,7 +362,7 @@ train_dataloader = dict(
             dict(type='PackDetInputs'),
         ],
         type='CocoDataset'),
-    num_workers=10,
+    num_workers=8,
     persistent_workers=True,
     pin_memory=True,
     sampler=dict(_scope_='mmdet', shuffle=True, type='DefaultSampler'))
@@ -529,7 +532,8 @@ val_dataloader = dict(
         ann_file='valid/_annotations.coco.json',
         backend_args=None,
         data_prefix=dict(img='valid/'),
-        data_root='dataset/card_detection-2/',
+        data_root=
+        'C:/Users/ryuyoonmin/python_project/jaram_height/app/dataset/card_detection-2/',
         metainfo=dict(classes=('card', )),
         pipeline=[
             dict(backend_args=None, type='LoadImageFromFile'),
@@ -562,12 +566,13 @@ val_dataloader = dict(
         test_mode=True,
         type='CocoDataset'),
     drop_last=False,
-    num_workers=10,
+    num_workers=4,
     persistent_workers=True,
     sampler=dict(_scope_='mmdet', shuffle=False, type='DefaultSampler'))
 val_evaluator = dict(
     _scope_='mmdet',
-    ann_file='dataset/card_detection-2/valid/_annotations.coco.json',
+    ann_file=
+    'C:/Users/ryuyoonmin/python_project/jaram_height/app/dataset/card_detection-2/valid/_annotations.coco.json',
     backend_args=None,
     format_only=False,
     metric='bbox',

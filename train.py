@@ -5,7 +5,7 @@ def train_model():
     model = YOLO("yolo8m.pt")
 
     results = model.train(
-        data="dataset/card_detection-2/data.yaml",
+        data="dataset_r/card_detection-2/data.yaml",
         epochs=50,
         imgsz=640,
         device="mps",

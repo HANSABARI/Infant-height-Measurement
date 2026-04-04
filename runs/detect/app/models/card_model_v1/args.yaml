@@ -1,7 +1,7 @@
 task: detect
 mode: train
 model: yolov8m.pt
-data: dataset/card_detection-1/data.yaml
+data: dataset_r/card_detection-1/data.yaml
 epochs: 50
 time: null
 patience: 100

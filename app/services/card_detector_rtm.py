@@ -16,13 +16,13 @@ torch.load = _patched_torch_load
 # =====================================================================
 
 class CardDetector:
-    def __init__(self, config_path: str = None, checkpoint_path: str = None, device: str = 'cpu'):
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    def __init__(self, config_path: str = None, checkpoint_path: str = None, device: str = 'cuda:0'):
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # app
 
         if config_path is None:
             config_path = os.path.join(base_dir, "models", "card_model_v2", "rtmdet_nano_card.py")
         if checkpoint_path is None:
-            checkpoint_path = os.path.join(base_dir, "models", "card_model_v2", "epoch_50.pth")
+            checkpoint_path = os.path.join(base_dir, "models", "card_model_v2", "epoch_300.pth")
 
         print(f"Loading RTMDet model...\nConfig: {config_path}\nWeights: {checkpoint_path}")
         self.model = init_detector(config_path, checkpoint_path, device=device)

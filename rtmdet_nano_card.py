@@ -1,8 +1,9 @@
+# execute: python tools/train.py app/models/card_model_v2/rtmdet_nano_card.py
 # rtmdet_nano_card.py
 _base_ = 'mmdet::rtmdet/rtmdet_tiny_8xb32-300e_coco.py'
 
 # 1. 경로 설정 (사진의 폴더 구조와 일치시킴)
-data_root = 'dataset/card_detection-2/'
+data_root = 'app/dataset/card_detection-2/'
 classes = ('card',)  # 우리가 찾을 객체 이름
 
 # 2. 모델 설정 (기본 80개 클래스를 1개로 변경)
@@ -12,7 +13,9 @@ model = dict(
 
 # 3. 데이터셋 설정
 train_dataloader = dict(
-    batch_size=8, # Mac 로컬 테스트용으로 무리 안 가게 살짝 낮춤
+    # batch_size=8, # Mac 로컬 테스트용으로 무리 안 가게 살짝 낮춤
+    batch_size=64,
+    num_workers=8,
     dataset=dict(
         data_root=data_root,
         metainfo=dict(classes=classes),
@@ -22,6 +25,8 @@ train_dataloader = dict(
 )
 
 val_dataloader = dict(
+    batch_size=1,
+    num_workers=2,
     dataset=dict(
         data_root=data_root,
         metainfo=dict(classes=classes),

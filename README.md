@@ -56,7 +56,10 @@ MMCV_WITH_OPS=0 mim install "mmcv==2.1.0"
 # 2. Install MMDetection and MMPose
 ```Bash
 mim install "mmdet==3.2.0"
+mim install "mmengine==0.10.7"
 mim install "mmpose==1.3.2"
+# mmpose chumpy error:
+pip install chumpy --no-build-isolation
 ```
 
 🚨 Known Issues & Workarounds
