@@ -13,8 +13,62 @@ class Visualizer:
         if card_result["detected"]:
             x1, y1, x2, y2 = map(int, card_result["bbox"])
             # 박스 그리기 (BGR: 초록색)
-            cv2.rectangle(debug_img, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            mask = card_result.get("mask")
+
+            if mask is not None:
+                mask = mask.astype(bool)
+
+                overlay = debug_img.copy()
+                overlay[mask] = (0, 255, 0)
+                debug_img = cv2.addWeighted(overlay, 0.35, debug_img, 0.65, 0)
+
+                contours, _ = cv2.findContours(
+                    mask.astype(np.uint8),
+                    cv2.RETR_EXTERNAL,
+                    cv2.CHAIN_APPROX_SIMPLE,
+                )
+                cv2.drawContours(debug_img, contours, -1, (0, 255, 0), 2)
+            else:
+                cv2.rectangle(debug_img, (x1, y1), (x2, y2), (0, 255, 0), 2)
             # 텍스트
+            measurement_box = card_result.get("measurement_box")
+            long_side_segments = card_result.get("long_side_segments")
+
+            if measurement_box is not None:
+                box = np.asarray(measurement_box, dtype=np.int32)
+                cv2.polylines(debug_img, [box], True, (0, 255, 255), 2)
+
+            if long_side_segments is not None:
+                segments = np.asarray(long_side_segments, dtype=np.int32)
+                for segment in segments:
+                    cv2.line(
+                        debug_img,
+                        tuple(segment[0]),
+                        tuple(segment[1]),
+                        (255, 0, 255),
+                        3,
+                    )
+
+                midpoint = tuple(
+                    np.mean(segments.reshape(-1, 2), axis=0).astype(int)
+                )
+                side_lengths = card_result["long_side_lengths_px"]
+                scale_label = (
+                    f"avg({side_lengths[0]:.1f}, {side_lengths[1]:.1f})px / "
+                    f"{card_result['reference_length_cm']:.2f}cm = "
+                    f"{card_result['px_per_cm']:.2f}px/cm "
+                    f"[{card_result['geometry_method']}]"
+                )
+                cv2.putText(
+                    debug_img,
+                    scale_label,
+                    (midpoint[0] + 5, midpoint[1] - 5),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.45,
+                    (255, 0, 255),
+                    2,
+                )
+
             label = f"Card ({card_result['confidence']:.2f})"
             cv2.putText(debug_img, label, (x1, y1 - 10),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
