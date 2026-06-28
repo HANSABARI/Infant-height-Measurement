@@ -22,6 +22,6 @@ debug_images/
 
 *.pth
 dataset/
-debug_images/
+*.zip
 mmdeploy/
 weights/

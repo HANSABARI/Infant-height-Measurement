@@ -9,7 +9,7 @@ def show_mask(mask, ax, random_color=False):
     if random_color:
         color = np.concatenate([np.random.random(3), np.array([0.6])], axis=0)
     else:
-        color = np.array([30 / 255, 144 / 255, 255 / 255, 0.6])  # 파란색 반투명 마스크
+        color = np.array([255 / 255, 144 / 255, 30 / 255, 0.6])  # 파란색 반투명 마스크
     h, w = mask.shape[-2:]
     mask_image = mask.reshape(h, w, 1) * color.reshape(1, 1, -1)
     return mask_image
@@ -46,7 +46,7 @@ def main():
 
     # 이후 RTMDet에서 BBox를 넘겨줄 예정
     h, w, _ = image.shape
-    input_box = np.array([w * 0.1, h * 0.1, w * 0.835, h * 0.7])
+    input_box = np.array([w * 0.7, h * 0.35, w * 0.83, h * 0.55])
 
     # MobileSAM 추론
     print("마스크 추론 중...")
