@@ -1,19 +1,33 @@
-from pydantic import BaseModel
-from typing import Optional, List, Dict
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Literal
+
+from pydantic import BaseModel, Field
+
 
 class HeightRange(BaseModel):
     min: float
     max: float
 
+
+class MeasurementError(BaseModel):
+    code: str
+    message: str
+
+
 class MeasurementResult(BaseModel):
-    height_range: HeightRange
-    confidence: float
-    method: str
-    segments_cm: Dict[str, float]
-    knee_angle: float
-    warnings: List[str]
+    estimatedHeightCm: float
+    heightRangeCm: HeightRange | None
+    confidence: float | None
+    quality: Literal["GOOD", "FAIR"] | None
+    modelVersion: str
+    warnings: list[str] = Field(default_factory=list)
+    measuredAt: datetime
+
 
 class MeasurementResponse(BaseModel):
-    success: bool
-    result: Optional[MeasurementResult] = None
-    error: Optional[str] = None
+    measurementId: str
+    status: Literal["SUCCESS", "RETRY", "FAILED"]
+    result: MeasurementResult | None
+    error: MeasurementError | None

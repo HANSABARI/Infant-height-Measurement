@@ -19,6 +19,7 @@ chumpy==0.70
 
 # 웹 서버 및 유틸리티
 fastapi==0.135.3
+python-multipart==0.0.27
 uvicorn[standard]==0.43.0
 rtmlib==0.0.15
 

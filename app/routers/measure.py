@@ -1,129 +1,252 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException
-import cv2
-import numpy as np
+from __future__ import annotations
+
+import hmac
+import logging
+import math
 import os
-from datetime import datetime
+from datetime import datetime, timezone
+from typing import TYPE_CHECKING, Annotated, Literal
 
-# 서비스 모듈 (우리가 만든 AI 부품들)
-from app.services.card_detector_rtm import CardDetector
-from app.services.pose_estimator import PoseEstimator
-from app.services.height_calculator import HeightCalculator
-from app.services.visualizer import Visualizer
+from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile
 
-# 스키마 (데이터 형틀)
-from app.schemas.measurement import MeasurementResponse, MeasurementResult, HeightRange
+from app.schemas.measurement import (
+    HeightRange,
+    MeasurementError,
+    MeasurementResponse,
+    MeasurementResult,
+)
+if TYPE_CHECKING:
+    import numpy as np
+
+    from app.services.card_detector_rtm import CardDetector
+    from app.services.height_calculator import HeightCalculator
+    from app.services.pose_estimator import PoseEstimator
+    from app.services.visualizer import Visualizer
+
+logger = logging.getLogger(__name__)
+
+AI_MODEL_VERSION = "h-align-v1"
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+SUPPORTED_CONTENT_TYPES = {"image/jpeg", "image/png"}
+UNCALIBRATED_WARNINGS = [
+    "HEIGHT_RANGE_UNCALIBRATED",
+    "CONFIDENCE_UNCALIBRATED",
+]
+MeasurementStatus = Literal["SUCCESS", "RETRY", "FAILED"]
+
+
+class ModelServiceUnavailable(RuntimeError):
+    pass
+
+
+def require_ai_auth(
+    authorization: Annotated[str | None, Header()] = None,
+) -> None:
+    configured_key = os.getenv("AI_API_KEY")
+    if not configured_key:
+        raise HTTPException(
+            status_code=503,
+            detail="AI service authentication is not configured.",
+        )
+    expected = f"Bearer {configured_key}"
+    if authorization is None or not hmac.compare_digest(authorization, expected):
+        raise HTTPException(status_code=401, detail="AI service authentication failed.")
+
 
 router = APIRouter()
 
-# --- [초기화] AI 모델 로딩 (서버 시작 시 1회만 실행됨) ---
-print("--- 🚀 AI 모델 로딩 시작 ---")
-card_detector = CardDetector()  # 카드 찾는 놈
-pose_estimator = PoseEstimator()  # 관절 찾는 놈
-height_calculator = HeightCalculator()  # 계산하는 놈
-visualizer = Visualizer()  # 그림 그리는 놈
-print("--- ✅ AI 모델 로딩 완료 ---")
-
-# 디버그 이미지가 저장될 폴더 설정
-DEBUG_DIR = "debug_images"
-os.makedirs(DEBUG_DIR, exist_ok=True)  # 폴더 없으면 자동 생성
+_models: tuple[CardDetector, PoseEstimator, HeightCalculator, Visualizer] | None = None
 
 
-# =========================================================
-# 1. [Main] 실제 키 측정 API (프론트엔드 연동용)
-# =========================================================
-@router.post("/measure", response_model=MeasurementResponse)
-async def measure_height(file: UploadFile = File(...)):
-    """
-    [Production] 앱에서 사용하는 메인 API
-    - 이미지 업로드 -> 카드/관절 검출 -> 키 계산 -> JSON 결과 반환
-    """
-    # 1. 이미지 읽기
-    contents = await file.read()
-    nparr = np.frombuffer(contents, np.uint8)
-    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+def _get_models() -> tuple[CardDetector, PoseEstimator, HeightCalculator, Visualizer]:
+    global _models
+    if _models is not None:
+        return _models
 
-    if img is None:
-        return MeasurementResponse(success=False, error="이미지 파일을 읽을 수 없습니다.")
+    try:
+        from app.services.card_detector_rtm import CardDetector
+        from app.services.height_calculator import HeightCalculator
+        from app.services.pose_estimator import PoseEstimator
+        from app.services.visualizer import Visualizer
 
-    # 2. 카드 검출 (Stage 2)
-    card_result = card_detector.detect(img)
-    if not card_result["detected"]:
-        return MeasurementResponse(
-            success=False,
-            error="참조 카드(신용카드)를 찾을 수 없습니다. 카드가 잘 보이게 찍어주세요."
+        print("--- AI model loading started ---")
+        _models = (
+            CardDetector(),
+            PoseEstimator(),
+            HeightCalculator(),
+            Visualizer(),
         )
+        print("--- AI model loading completed ---")
+        return _models
+    except Exception as error:
+        raise ModelServiceUnavailable from error
 
-    # 3. 포즈 추정 (Stage 3)
-    pose_result = pose_estimator.estimate(img)
-    if not pose_result["detected"]:
-        return MeasurementResponse(
-            success=False,
-            error="사람을 찾을 수 없습니다. 전신이 나오도록 찍어주세요."
-        )
 
-    # 4. 키 산출 (Stage 4)
-    calc_result = height_calculator.calculate(
-        keypoints=pose_result["keypoints"],
-        px_per_cm=card_result["px_per_cm"]
-    )
-
-    # 5. 결과 반환
-    height_cm = calc_result["height_cm"]
-    margin = 0.5  # 오차 범위 (±0.5cm)
-
+def _error(
+    measurement_id: str,
+    status: MeasurementStatus,
+    code: str,
+    message: str,
+) -> MeasurementResponse:
     return MeasurementResponse(
-        success=True,
-        result=MeasurementResult(
-            height_range=HeightRange(
-                min=round(height_cm - margin, 1),
-                max=round(height_cm + margin, 1)
-            ),
-            confidence=round((card_result["confidence"] + pose_result["confidence"]) / 2, 2),
-            method="h-align-v1",
-            segments_cm=calc_result["segments"],
-            knee_angle=180.0,  # 추후 구현 예정
-            warnings=[]
-        )
+        measurementId=measurement_id,
+        status=status,
+        result=None,
+        error=MeasurementError(code=code, message=message),
     )
 
 
-# =========================================================
-# 2. [Debug] 디버깅용 API (이미지 파일 저장용)
-# =========================================================
-@router.post("/measure/debug")
-async def measure_debug_save(file: UploadFile = File(...)):
-    """
-    [Test] 분석 결과를 시각화하여 서버 폴더(debug_images)에 저장
-    - 팀원 공유용 또는 모델 성능 확인용
-    - 반환값: 저장된 파일 경로 및 분석 요약
-    """
-    # 1. 이미지 읽기
-    contents = await file.read()
-    nparr = np.frombuffer(contents, np.uint8)
-    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+def _retry(measurement_id: str, code: str, message: str) -> MeasurementResponse:
+    return _error(measurement_id, "RETRY", code, message)
 
-    if img is None:
+
+def _failed(measurement_id: str) -> MeasurementResponse:
+    return _error(
+        measurement_id,
+        "FAILED",
+        "INFERENCE_FAILED",
+        "추론을 완료하지 못했습니다. 잠시 후 다시 시도해 주세요.",
+    )
+
+
+def _is_transient_error(error: Exception) -> bool:
+    message = str(error).lower()
+    return isinstance(error, TimeoutError) or any(
+        token in message
+        for token in ("timeout", "timed out", "cuda", "gpu", "out of memory")
+    )
+
+
+def _decode_image(contents: bytes) -> np.ndarray | None:
+    try:
+        import cv2
+        import numpy as np
+    except Exception as error:
+        raise ModelServiceUnavailable from error
+
+    return cv2.imdecode(np.frombuffer(contents, np.uint8), cv2.IMREAD_COLOR)
+
+
+@router.post(
+    "/measure",
+    response_model=MeasurementResponse,
+    dependencies=[Depends(require_ai_auth)],
+)
+async def measure_height(
+    file: UploadFile = File(...),
+    measurement_id: Annotated[str, Header(alias="X-Measurement-Id")] = "",
+) -> MeasurementResponse:
+    if not measurement_id.strip():
+        raise HTTPException(status_code=400, detail="X-Measurement-Id is required.")
+    if file.content_type not in SUPPORTED_CONTENT_TYPES:
+        return _retry(
+            measurement_id,
+            "INVALID_IMAGE",
+            "JPEG 또는 PNG 사진만 사용할 수 있습니다.",
+        )
+
+    contents = await file.read(MAX_UPLOAD_BYTES + 1)
+    if len(contents) > MAX_UPLOAD_BYTES:
+        return _retry(
+            measurement_id,
+            "INVALID_IMAGE",
+            "이미지 파일은 10MB 이하만 사용할 수 있습니다.",
+        )
+
+    try:
+        image = _decode_image(contents)
+        if image is None:
+            return _retry(
+                measurement_id,
+                "INVALID_IMAGE",
+                "이미지 파일을 읽을 수 없습니다.",
+            )
+
+        card_detector, pose_estimator, height_calculator, _ = _get_models()
+        card_result = card_detector.detect(image)
+        if not card_result["detected"]:
+            return _retry(
+                measurement_id,
+                "CARD_NOT_FOUND",
+                "참조 카드가 보이도록 다시 촬영해 주세요.",
+            )
+
+        pose_result = pose_estimator.estimate(image)
+        if not pose_result["detected"]:
+            return _retry(
+                measurement_id,
+                "PERSON_NOT_FOUND",
+                "전신이 보이도록 다시 촬영해 주세요.",
+            )
+
+        calculation = height_calculator.calculate(
+            keypoints=pose_result["keypoints"],
+            px_per_cm=card_result["px_per_cm"],
+        )
+        if calculation.get("error"):
+            return _failed(measurement_id)
+
+        height_cm = calculation.get("height_cm")
+        if not isinstance(height_cm, (int, float)) or not math.isfinite(height_cm):
+            return _failed(measurement_id)
+
+        return MeasurementResponse(
+            measurementId=measurement_id,
+            status="SUCCESS",
+            result=MeasurementResult(
+                estimatedHeightCm=float(height_cm),
+                heightRangeCm=None,
+                confidence=None,
+                quality=None,
+                modelVersion=AI_MODEL_VERSION,
+                warnings=UNCALIBRATED_WARNINGS,
+                measuredAt=datetime.now(timezone.utc),
+            ),
+            error=None,
+        )
+    except Exception as error:
+        if isinstance(error, ModelServiceUnavailable):
+            logger.error("AI model service is unavailable")
+            raise HTTPException(
+                status_code=503,
+                detail="AI model service is temporarily unavailable.",
+            ) from error
+        logger.exception("AI inference failed")
+        if _is_transient_error(error):
+            raise HTTPException(
+                status_code=503,
+                detail="AI service is temporarily unavailable.",
+            ) from error
+        return _failed(measurement_id)
+
+
+@router.post(
+    "/measure/debug",
+    dependencies=[Depends(require_ai_auth)],
+)
+async def measure_debug_save(file: UploadFile = File(...)) -> dict[str, object]:
+    if os.getenv("DEBUG_IMAGES_ENABLED", "false").lower() != "true":
+        raise HTTPException(status_code=404, detail="Not found.")
+
+    debug_dir = os.getenv("DEBUG_IMAGE_DIR", "debug_images")
+    os.makedirs(debug_dir, exist_ok=True)
+    contents = await file.read(MAX_UPLOAD_BYTES + 1)
+    image = _decode_image(contents)
+    if image is None:
         return {"success": False, "error": "이미지 읽기 실패"}
 
-    # 2. AI 추론 (카드 & 포즈)
-    card_result = card_detector.detect(img)
-    pose_result = pose_estimator.estimate(img)
+    card_detector, pose_estimator, _, visualizer = _get_models()
+    card_result = card_detector.detect(image)
+    pose_result = pose_estimator.estimate(image)
+    debug_image = visualizer.draw_debug(image, card_result, pose_result)
 
-    # 3. 시각화 (그림 그리기)
-    # 원본 이미지 위에 초록 박스와 빨간 스켈레톤을 그립니다.
-    debug_img = visualizer.draw_debug(img, card_result, pose_result)
-
-    # 4. 파일 저장
-    # 파일명: debug_20260212_123000.jpg 형식
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     filename = f"debug_{timestamp}.jpg"
-    save_path = os.path.join(DEBUG_DIR, filename)
+    save_path = os.path.join(debug_dir, filename)
+    import cv2
 
-    # OpenCV로 이미지 저장
-    cv2.imwrite(save_path, debug_img)
-    print(f"📸 디버그 이미지 저장됨: {save_path}")
+    cv2.imwrite(save_path, debug_image)
 
-    # 5. 결과 정보 반환
     return {
         "success": True,
         "message": "이미지가 서버에 저장되었습니다.",
@@ -133,6 +256,6 @@ async def measure_debug_save(file: UploadFile = File(...)):
             "card_detected": card_result["detected"],
             "card_conf": card_result["confidence"],
             "person_detected": pose_result["detected"],
-            "person_conf": pose_result["confidence"]
-        }
+            "person_conf": pose_result["confidence"],
+        },
     }

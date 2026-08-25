@@ -79,6 +79,7 @@ Solution Applied: In the training config (rtmdet_nano_card.py), validation (val_
 Start the FastAPI server locally:
 
 ```Bash
+export AI_API_KEY=local-development-secret
 uvicorn app.main:app --reload
 ```
 
@@ -88,5 +89,17 @@ API Documentation (Swagger UI): http://127.0.0.1:8000/docs
 
 Main Endpoint: POST /api/v1/measure
 
-Debug Endpoint (Saves image locally): POST /api/v1/measure/debug
+The main endpoint requires:
+
+- `Authorization: Bearer $AI_API_KEY`
+- `X-Measurement-Id: <measurement id>`
+- `multipart/form-data` field `file`
+
+The main endpoint returns `measurementId`, `status`, `result`, and `error`.
+`heightRangeCm`, `confidence`, and `quality` are nullable until their
+calibration is validated. The model method version is `h-align-v1`.
+
+The debug endpoint (`POST /api/v1/measure/debug`) is disabled unless
+`DEBUG_IMAGES_ENABLED=true`. It must remain disabled in production because it
+writes original-derived images and exposes local debug paths.
 ------------------------------------------------------------------------------------------------------------------------
