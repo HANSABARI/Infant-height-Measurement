@@ -92,10 +92,13 @@ class Visualizer:
                 ("left_hip", "right_hip"),  # 골반
                 ("left_hip", "left_knee"),  # 왼 다리 위
                 ("left_knee", "left_ankle"),  # 왼 다리 아래
+                ("left_ankle", "left_heel"),  # 왼 발꿈치
                 ("right_hip", "right_knee"),  # 오른 다리 위
                 ("right_knee", "right_ankle"),  # 오른 다리 아래
+                ("right_ankle", "right_heel"),  # 오른 발꿈치
                 ("nose", "left_shoulder"),  # 목 (가상 연결)
-                ("nose", "right_shoulder")
+                ("nose", "right_shoulder"),
+                ("head_top", "nose"),
             ]
 
             for p1_name, p2_name in connections:

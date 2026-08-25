@@ -11,6 +11,9 @@ mmengine==0.10.7
 mmcv==2.1.0
 mmdet==3.2.0
 mmpose==1.3.2
+albumentations==1.4.24
+ultralytics>=8.3.0,<9.0.0
+huggingface-hub>=0.24.0,<2.0.0
 
 # 이미지 및 수치 연산 (NumPy 1.x 호환)
 opencv-python==4.9.0.80

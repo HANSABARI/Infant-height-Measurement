@@ -5,6 +5,7 @@ import os
 
 
 class PoseEstimator:
+    PROPOSAL_KEYPOINT_SCORE_THRESHOLD = 0.2
     def __init__(self, device: str = 'cpu'):
         """
         rtmlib를 활용하여 RTMPose-WholeBody ONNX 모델을 로드합니다.
@@ -67,12 +68,37 @@ class PoseEstimator:
         target_indices = [0, 5, 6, 11, 12, 13, 14, 15, 16]
         target_scores = person_scores[target_indices]
         avg_conf = float(np.mean(target_scores))
+        bbox = self._bbox_from_scored_keypoints(person_kpts, person_scores)
 
         return {
             "detected": True,
             "keypoints": keypoints_dict,
-            "confidence": avg_conf
+            "confidence": avg_conf,
+            "bbox": bbox,
         }
+
+    @classmethod
+    def _bbox_from_scored_keypoints(
+        cls,
+        keypoints: np.ndarray,
+        scores: np.ndarray,
+    ) -> list[float]:
+        keypoints = np.asarray(keypoints, dtype=np.float32)
+        scores = np.asarray(scores, dtype=np.float32)
+        valid = (
+            np.isfinite(keypoints).all(axis=1)
+            & np.isfinite(scores)
+            & (scores >= cls.PROPOSAL_KEYPOINT_SCORE_THRESHOLD)
+        )
+        confident_points = keypoints[valid]
+        if len(confident_points) < 2:
+            return []
+
+        x_min, y_min = confident_points.min(axis=0)
+        x_max, y_max = confident_points.max(axis=0)
+        if x_max <= x_min or y_max <= y_min:
+            return []
+        return [float(x_min), float(y_min), float(x_max), float(y_max)]
 
 
 # --- 테스트 코드 ---

@@ -5,8 +5,8 @@ An AI-powered FastAPI backend server that calculates a person's actual height fr
 The pipeline relies on detecting a standard-sized reference object (a credit card) and extracting human body keypoints.
 
 ## 🌟 Core AI Pipeline
-1. **Card Detection (RTMDet):** Detects a reference card (8.56cm x 5.4cm) to calculate the `pixel-per-cm` ratio.
-2. **Pose Estimation (RTMPose):** Extracts human body keypoints (skeleton) using ONNX runtime (`rtmlib`).
+1. **Card Segmentation (HaS Image Model FP32):** Detects sensitive-document classes, but uses only standard `id_card` and `bank_card` masks to calculate the `pixel-per-cm` ratio from their 8.56cm long side. Passports and employee badges are not valid scale references.
+2. **Pose Estimation:** Keeps 13 existing WholeBody keypoints from ONNX Runtime (`rtmlib`) and adds only `head_top` from a separately trained one-keypoint RTMPose model.
 3. **Height Calculation:** Combines the skeleton data and the pixel ratio to estimate the actual physical height.
 
 ## 📂 Project Structure
@@ -19,14 +19,16 @@ h-align-server/
 │   ├── routers/                  # API endpoints (/measure, /measure/debug)
 │   ├── schemas/                  # Pydantic models for request/response
 │   ├── services/                 # AI & Business Logic
-│   │   ├── card_detector_rtm.py  # RTMDet Inference (w/ PyTorch security patch)
-│   │   ├── pose_estimator.py     # RTMPose Inference
+│   │   ├── card_detector_has.py  # HaS Image Model FP32 segmentation inference
+│   │   ├── card_geometry.py      # Mask geometry and pixel-per-cm helpers
+│   │   ├── card_detector_rtm.py  # Previous RTMDet Inference path
+│   │   ├── pose_estimator.py     # Existing WholeBody keypoints
+│   │   ├── head_top_pose_estimator.py # WholeBody + head_top fusion
 │   │   ├── height_calculator.py  # Physical height calculation logic
 │   │   └── visualizer.py         # Drawing bounding boxes and skeletons
 │   └── models/                   # Pre-trained weights and config files
-│       └── card_model_v2/        
-│           ├── rtmdet_nano_card.py # Final RTMDet config
-│           └── epoch_50.pth      # Fine-tuned RTMDet weights (50 epochs)
+│       └── has_image_0209_fp32/
+│           └── sensitive_seg_best.pt # Git ignored; auto-downloadable from Hugging Face
 ├── dataset/                      # (Git Ignored) Training image datasets
 └── debug_images/                 # (Git Ignored) Saved debug visualization images
 ```
@@ -62,13 +64,23 @@ mim install "mmpose==1.3.2"
 pip install chumpy --no-build-isolation
 ```
 
+### HaS Image Model FP32 card segmentation weights
+
+The server uses `xuanwulab/HaS_Image_0209_FP32` (`HaS Image Model (FP32)`) by default. Its architecture is YOLO11 instance segmentation.
+
+- Default local path: `app/models/has_image_0209_fp32/sensitive_seg_best.pt`
+- Override path: `CARD_HAS_MODEL=/path/to/sensitive_seg_best.pt`
+- Disable startup auto-download: `CARD_HAS_AUTO_DOWNLOAD=0`
+- Optional device override: `CARD_HAS_DEVICE=cuda:0`
+- Optional inference size override: `CARD_HAS_IMGSZ=1920`
+
 🚨 Known Issues & Workarounds
 1. PyTorch 2.6+ Security Policy (torch.load UnpicklingError)
 Starting from PyTorch 2.6, the default behavior of torch.load has been restricted (weights_only=True by default) for security reasons.
 Loading OpenMMLab weights (.pth) will trigger an UnpicklingError due to embedded numpy objects and history buffers.
 
-Solution Applied: A monkey-patching workaround (weights_only=False) is already implemented inside app/services/card_detector_rtm.py.
-No manual action is required to run the server.
+Solution Applied: The previous RTMDet path keeps its monkey-patching workaround inside app/services/card_detector_rtm.py.
+The active HaS Image path uses Ultralytics and does not require the RTMDet config/checkpoint pair.
 
 
 2. Training on Mac (MPS NMS Limitation)
@@ -86,7 +98,71 @@ The server will be available at http://127.0.0.1:8000.
 
 API Documentation (Swagger UI): http://127.0.0.1:8000/docs
 
-Main Endpoint: POST /api/v1/measure
+Main Endpoint: `POST /api/v1/measure`
 
 Debug Endpoint (Saves image locally): POST /api/v1/measure/debug
+
+### jaram-height-web Worker connection
+
+The main endpoint follows the `jaram-height-web` AI contract. It accepts a
+normalized image in `file`, `X-Measurement-Id`, and a Bearer token. It returns
+only the estimated height, range, confidence, quality, warnings, and model
+version; internal card and pose diagnostics are not returned.
+
+Set a shared key before starting the server:
+
+```bash
+export H_ALIGN_AI_API_KEY='<shared-ai-api-key>'
+uvicorn app.main:app --reload
+```
+
+Configure the same value as `AI_API_KEY` in the `jaram-height-web` Edge
+Function secrets. The detailed contract is in
+[`docs/H_ALIGN_API_SPEC.md`](docs/H_ALIGN_API_SPEC.md).
+
+### Infant dataset merge and RTMPose fine-tuning
+
+The current infant keypoint data can be merged from the extracted directories
+under `dataset/infant_dataset_skel/splits`. The merger scans only immediate
+directories whose names end with a part/range pattern such as
+`part01_0001-0168`; ZIP files are ignored.
+
+```bash
+python scripts/merge_infant_keypoint_datasets.py
+```
+
+This creates `dataset/infant_dataset_skel/merged` with copied images and
+`person_keypoints_train.json` / `person_keypoints_val.json`. When another
+compatible directory is added to `splits`, run the same command again to
+regenerate the complete merged dataset.
+
+The height API preserves existing WholeBody joints and trains a separate
+single-keypoint model only for `head_top`. Before a long run, generate the
+derived one-keypoint annotations and validate the configuration:
+
+```bash
+python scripts/train_rtmpose_head_top.py \
+  --dry-run \
+  --device mps \
+  --epochs 100 \
+  --batch-size 8 \
+  --num-workers 0
+```
+
+Start the head_top-only fine-tuning run:
+
+```bash
+python scripts/train_rtmpose_head_top.py \
+  --device mps \
+  --epochs 100 \
+  --batch-size 8 \
+  --num-workers 0 \
+  --work-dir work_dirs/rtmpose_infant_head_top_only
+```
+
+Use `--checkpoint /path/to/checkpoint.pth` to continue from an existing
+compatible head_top-only checkpoint. The old `train_rtmpose_infant.py` remains
+available for experiments that intentionally re-train the complete 14-keypoint
+schema. See
+`docs/INFANT_RTMPOSE_TRAINING.md` for all options and validation details.
 ------------------------------------------------------------------------------------------------------------------------
