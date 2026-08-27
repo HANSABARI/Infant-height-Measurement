@@ -23,6 +23,7 @@ chumpy==0.70
 # 웹 서버 및 유틸리티
 fastapi==0.135.3
 uvicorn[standard]==0.43.0
+python-multipart==0.0.22
 rtmlib==0.0.15
 
 # rtm 모델 학습을 위해선 mmdetection 설치 필요.

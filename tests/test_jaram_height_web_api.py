@@ -52,6 +52,7 @@ class JaramHeightWebApiTests(unittest.TestCase):
         os.environ.pop("H_ALIGN_AI_API_KEY", None)
 
     def setUp(self):
+        os.environ.pop("H_ALIGN_DEBUG_API_ENABLED", None)
         self.original_card_detector = self.measure_module.card_detector
         self.original_pose_estimator = self.measure_module.pose_estimator
         self.original_height_calculator = self.measure_module.height_calculator
@@ -60,6 +61,7 @@ class JaramHeightWebApiTests(unittest.TestCase):
         self.measure_module.height_calculator = _FakeHeightCalculator()
 
     def tearDown(self):
+        os.environ.pop("H_ALIGN_DEBUG_API_ENABLED", None)
         self.measure_module.card_detector = self.original_card_detector
         self.measure_module.pose_estimator = self.original_pose_estimator
         self.measure_module.height_calculator = self.original_height_calculator
@@ -141,6 +143,45 @@ class JaramHeightWebApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 500)
         self.assertEqual(response.json()["detail"], "AI inference is temporarily unavailable")
+
+    def test_debug_endpoint_is_disabled_by_default(self):
+        response = self.client.post(
+            "/api/v1/measure/debug",
+            headers={"Authorization": "Bearer test-ai-key"},
+        )
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.json()["detail"], "Not Found")
+
+    def test_debug_endpoint_requires_authentication_when_enabled(self):
+        os.environ["H_ALIGN_DEBUG_API_ENABLED"] = "1"
+
+        response = self.client.post(
+            "/api/v1/measure/debug",
+        )
+
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.json()["detail"], "Invalid AI server credentials")
+
+    def test_debug_endpoint_runs_when_explicitly_enabled_and_authenticated(self):
+        os.environ["H_ALIGN_DEBUG_API_ENABLED"] = "true"
+        debug_image = np.zeros((8, 8, 3), dtype=np.uint8)
+
+        with (
+            patch.object(self.measure_module.visualizer, "draw_debug", return_value=debug_image),
+            patch("app.routers.measure.os.makedirs") as makedirs,
+            patch("app.routers.measure.cv2.imwrite", return_value=True) as imwrite,
+        ):
+            response = self.client.post(
+                "/api/v1/measure/debug",
+                headers={"Authorization": "Bearer test-ai-key"},
+                files=self._image_upload(),
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["success"])
+        makedirs.assert_called_once_with(self.measure_module.DEBUG_DIR, exist_ok=True)
+        imwrite.assert_called_once()
 
 
 if __name__ == "__main__":

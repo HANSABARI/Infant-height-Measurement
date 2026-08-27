@@ -100,7 +100,7 @@ API Documentation (Swagger UI): http://127.0.0.1:8000/docs
 
 Main Endpoint: `POST /api/v1/measure`
 
-Debug Endpoint (Saves image locally): POST /api/v1/measure/debug
+Debug Endpoint (disabled by default; saves an image locally): `POST /api/v1/measure/debug`
 
 ### jaram-height-web Worker connection
 
@@ -119,6 +119,18 @@ uvicorn app.main:app --reload
 Configure the same value as `AI_API_KEY` in the `jaram-height-web` Edge
 Function secrets. The detailed contract is in
 [`docs/H_ALIGN_API_SPEC.md`](docs/H_ALIGN_API_SPEC.md).
+
+The debug endpoint is intended for trusted local development only. It returns
+`404` unless it is explicitly enabled, and it always requires the same Bearer
+token as the main endpoint:
+
+```bash
+export H_ALIGN_DEBUG_API_ENABLED=1
+export H_ALIGN_AI_API_KEY='<shared-ai-api-key>'
+```
+
+Do not enable the debug endpoint on an internet-exposed production server
+unless its diagnostic output and locally saved images are explicitly required.
 
 ### Infant dataset merge and RTMPose fine-tuning
 

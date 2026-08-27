@@ -2,7 +2,7 @@ import hmac
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, UploadFile, File, Header, HTTPException, status
+from fastapi import APIRouter, Depends, UploadFile, File, Header, HTTPException, status
 import cv2
 import numpy as np
 import os
@@ -25,6 +25,7 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 AI_API_KEY_ENV = "H_ALIGN_AI_API_KEY"
+DEBUG_API_ENABLED_ENV = "H_ALIGN_DEBUG_API_ENABLED"
 
 CARD_NOT_FOUND_MESSAGE = "참조 카드를 찾지 못했습니다. 카드가 전체 보이도록 다시 촬영해주세요."
 INVALID_IMAGE_MESSAGE = "이미지 파일을 읽지 못했습니다. 다른 사진으로 다시 촬영해주세요."
@@ -43,7 +44,6 @@ print("--- ✅ AI 모델 로딩 완료 ---")
 
 # 디버그 이미지가 저장될 폴더 설정
 DEBUG_DIR = "debug_images"
-os.makedirs(DEBUG_DIR, exist_ok=True)  # 폴더 없으면 자동 생성
 
 
 # =========================================================
@@ -147,11 +147,31 @@ def _verify_ai_credentials(authorization: Optional[str]) -> None:
         )
 
 
+def _verify_debug_api_access(
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+) -> None:
+    enabled = os.getenv(DEBUG_API_ENABLED_ENV, "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    if not enabled:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Not Found",
+        )
+
+    _verify_ai_credentials(authorization)
+
+
 # =========================================================
 # 2. [Debug] 디버깅용 API (이미지 파일 저장용)
 # =========================================================
-@router.post("/measure/debug")
-async def measure_debug_save(file: UploadFile = File(...)):
+@router.post("/measure/debug", dependencies=[Depends(_verify_debug_api_access)])
+async def measure_debug_save(
+    file: UploadFile = File(...),
+):
     """
     [Test] 분석 결과를 시각화하여 서버 폴더(debug_images)에 저장
     - 팀원 공유용 또는 모델 성능 확인용
@@ -186,6 +206,7 @@ async def measure_debug_save(file: UploadFile = File(...)):
     save_path = os.path.join(DEBUG_DIR, filename)
 
     # OpenCV로 이미지 저장
+    os.makedirs(DEBUG_DIR, exist_ok=True)
     cv2.imwrite(save_path, debug_img)
     print(f"📸 디버그 이미지 저장됨: {save_path}")
 

@@ -115,7 +115,11 @@ guarantee. Network failures, timeouts, and service overload must use HTTP
 ```http
 POST /api/v1/measure/debug
 Content-Type: multipart/form-data
+Authorization: Bearer <H_ALIGN_AI_API_KEY>
 ```
 
 This local development endpoint writes a visualization into `debug_images/`.
+It is disabled by default and returns `404`. Set
+`H_ALIGN_DEBUG_API_ENABLED=1` to enable it; an enabled endpoint still requires
+the same Bearer token as the main measurement endpoint.
 The production Worker must call only `/api/v1/measure`.
