@@ -1,0 +1,35 @@
+FROM --platform=linux/amd64 python:3.10-slim
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PYTHONUNBUFFERED=1
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        build-essential \
+        curl \
+        git \
+        libglib2.0-0 \
+        libgl1 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /srv/ai
+
+COPY requirements.txt ./requirements.txt
+
+RUN python -m pip install --upgrade pip setuptools wheel openmim \
+    && python -m pip install \
+        --index-url https://download.pytorch.org/whl/cpu \
+        torch==2.1.0 torchvision==0.16.0 \
+    && mim install "mmcv==2.1.0" \
+        -f https://download.openmmlab.com/mmcv/dist/cpu/torch2.1.0/index.html \
+    && grep -Ev '^(torch|torchvision|mmcv)==' requirements.txt \
+        > /tmp/requirements-local.txt \
+    && python -m pip install -r /tmp/requirements-local.txt
+
+COPY app ./app
+
+EXPOSE 8000
+
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

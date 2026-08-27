@@ -1,0 +1,25 @@
+services:
+  ai:
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: Dockerfile.local-cpu
+    init: true
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      H_ALIGN_AI_API_KEY: "${H_ALIGN_AI_API_KEY:?Set H_ALIGN_AI_API_KEY in .env.local-ai}"
+      H_ALIGN_DEBUG_API_ENABLED: "0"
+      CARD_HAS_AUTO_DOWNLOAD: "0"
+      CARD_HAS_MODEL: "/models/card.pt"
+      CARD_HAS_DEVICE: "cpu"
+      INFANT_HEAD_TOP_CONFIG: "/srv/ai/app/configs/rtmpose_head_top.py"
+      INFANT_HEAD_TOP_CHECKPOINT: "/models/head_top.pth"
+      INFANT_HEAD_TOP_DEVICE: "cpu"
+    volumes:
+      - "${CARD_HAS_MODEL_HOST:?Set CARD_HAS_MODEL_HOST in .env.local-ai}:/models/card.pt:ro"
+      - "${INFANT_HEAD_TOP_CHECKPOINT_HOST:?Set INFANT_HEAD_TOP_CHECKPOINT_HOST in .env.local-ai}:/models/head_top.pth:ro"
+      - rtmlib-cache:/root/.cache
+
+volumes:
+  rtmlib-cache:

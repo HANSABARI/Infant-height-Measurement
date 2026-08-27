@@ -1,0 +1,14 @@
+.git
+.github
+.idea
+.venv
+.worktrees
+__pycache__
+*.pyc
+*.pt
+*.pth
+*.onnx
+dataset
+debug_images
+work_dirs
+runs

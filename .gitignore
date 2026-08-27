@@ -35,3 +35,7 @@ runs/
 /jaram-height-web/
 /docs/superpowers/
 /.worktrees/
+
+# Local AI container settings
+/.env.local-ai
+!/.env.local-ai.example
