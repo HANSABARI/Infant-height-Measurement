@@ -132,6 +132,52 @@ export H_ALIGN_AI_API_KEY='<shared-ai-api-key>'
 Do not enable the debug endpoint on an internet-exposed production server
 unless its diagnostic output and locally saved images are explicitly required.
 
+### macOS Docker CPU integration test
+
+Apple Silicon Mac에서는 Linux `amd64` AI 컨테이너를 CPU 모드로 실행해
+`jaram-height-web`의 로컬 Supabase Worker와 실제 모델을 통합 검증할 수 있습니다.
+이 구성은 API와 비동기 처리 흐름을 확인하기 위한 것이며 Windows CUDA 운영
+성능의 기준이 아닙니다.
+
+Git에서 제외되는 환경 파일을 준비합니다.
+
+```bash
+cp .env.local-ai.example .env.local-ai
+```
+
+`CARD_HAS_MODEL_HOST`와 `INFANT_HEAD_TOP_CHECKPOINT_HOST`를 실제 호스트 파일로
+설정하고, `H_ALIGN_AI_API_KEY`를 웹 Worker의 `AI_API_KEY`와 같은 값으로
+설정합니다. 모델 파일과 API 키는 커밋하지 않습니다.
+
+```bash
+docker compose --env-file .env.local-ai -f compose.local-ai.yaml up -d
+curl --fail http://127.0.0.1:8000/docs
+docker logs macos-local-inference-ai-1
+```
+
+로컬 웹 Worker는 컨테이너에서 Mac 호스트로 접근하기 위해
+`AI_BASE_URL=http://host.docker.internal:8000`을 사용합니다. 현재 CPU 검증
+설정은 AI timeout 180초와 Queue visibility timeout 210초를 사용합니다.
+
+2026-08-27 실제 모델 통합 테스트에서 다음을 확인했습니다.
+
+- 카드 미검출: `200 + RETRY`, `CARD_NOT_FOUND`
+- 유효한 입력: `200 + SUCCESS`, DB와 웹 결과 저장
+- warm CPU 추론: 약 37초
+- 내부 모델 경로와 디버그 정보가 일반 응답에 포함되지 않음
+
+위 측정값과 시간은 통합 경로 검증 기록이며 정확도 또는 운영 성능을
+보증하지 않습니다. 최초 실행은 ONNX 모델 다운로드와 모델 초기화 때문에
+더 오래 걸리고 CPU 사용률이 높을 수 있습니다.
+
+볼륨과 모델 파일을 삭제하지 않고 종료합니다.
+
+```bash
+docker compose --env-file .env.local-ai -f compose.local-ai.yaml stop
+```
+
+`down -v`는 사용하지 않습니다.
+
 ### Infant dataset merge and RTMPose fine-tuning
 
 The current infant keypoint data can be merged from the extracted directories

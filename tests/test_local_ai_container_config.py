@@ -25,6 +25,8 @@ class LocalAiContainerConfigTests(unittest.TestCase):
             "download.openmmlab.com/mmcv/dist/cpu/torch2.1.0",
             dockerfile,
         )
+        self.assertIn("--no-build-isolation chumpy==0.70", dockerfile)
+        self.assertIn("torch|torchvision|mmcv|chumpy", dockerfile)
         self.assertNotIn("COPY work_dirs", dockerfile)
         self.assertNotIn("COPY app/models", dockerfile)
         self.assertIn("*.pt", dockerignore)

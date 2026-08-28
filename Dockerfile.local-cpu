@@ -24,7 +24,8 @@ RUN python -m pip install --upgrade pip setuptools wheel openmim \
         torch==2.1.0 torchvision==0.16.0 \
     && mim install "mmcv==2.1.0" \
         -f https://download.openmmlab.com/mmcv/dist/cpu/torch2.1.0/index.html \
-    && grep -Ev '^(torch|torchvision|mmcv)==' requirements.txt \
+    && python -m pip install --no-build-isolation chumpy==0.70 \
+    && grep -Ev '^(torch|torchvision|mmcv|chumpy)==' requirements.txt \
         > /tmp/requirements-local.txt \
     && python -m pip install -r /tmp/requirements-local.txt
 
