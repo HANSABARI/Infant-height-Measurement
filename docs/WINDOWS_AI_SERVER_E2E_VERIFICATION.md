@@ -7,13 +7,16 @@ HTTPS 경로를 검증한 결과를 팀에 공유하기 위한 기록이다.
 ## 요약
 
 - 검증 일시: `2026-09-04 22:20 KST`
+- 추가 실제 이미지 검증: `2026-09-04 23:28 KST`
 - AI 저장소 브랜치: `jaram-height-web`
-- AI commit SHA: `360884631fb5cf0cf7b20f51e04d3c5c47168584`
+- AI runtime commit SHA: `242c750`
 - 운영 PC: Windows + NVIDIA GPU
 - GPU: `NVIDIA GeForce RTX 4060 Ti`
 - Python/Conda env: `jaram-height-web`
 - 서버 포트: `127.0.0.1:8000`
-- 임시 공개 Base URL: `https://soul-faced-crafts-extremely.trycloudflare.com`
+- 임시 공개 Base URL:
+  - `https://soul-faced-crafts-extremely.trycloudflare.com`
+  - `https://flags-acne-bureau-bestsellers.trycloudflare.com`
 - 검증 결과: Cloudflare HTTPS 경로로 `HTTP 200 + SUCCESS` 확인
 
 Quick Tunnel URL은 임시 주소다. 터널 프로세스를 종료하거나 다시 만들면
@@ -37,6 +40,9 @@ jaram-height-web Worker
 - `AI_API_KEY`: AI 서버의 `H_ALIGN_AI_API_KEY`와 같은 Bearer secret
 
 실제 secret 값은 Git, 공개 이슈, 공개 채팅에 기록하지 않는다.
+이번 수동 검증에서는 팀원이 같은 명령으로 재현할 수 있도록 폐기 가능한 임시
+테스트 키 `abcdefg`를 사용했다. 이 값은 운영 secret이 아니며, 운영 또는 장기
+외부 노출 전에는 반드시 다른 secret으로 교체한다.
 
 ## Cloudflare 경로와 API 인증 경계
 
@@ -185,7 +191,47 @@ curl -i -X POST https://soul-faced-crafts-extremely.trycloudflare.com/api/v1/mea
 - 검증 전 필드인 `heightRangeCm`, `confidence`, `quality`는 `null`
 - 응답에 원본 이미지, 로컬 파일 경로, checkpoint 경로, stack trace가 없음
 
-### 4. 인증 실패
+### 4. 실제 테스트 이미지 Cloudflare SUCCESS
+
+`cloudflared`를 `http://127.0.0.1:8000` 대상으로 다시 열고, 새 Quick Tunnel
+URL을 통해 로컬 테스트 이미지를 업로드했다. 테스트 이미지는 Git에 커밋하지
+않는다.
+
+```bash
+curl -i -X POST https://flags-acne-bureau-bestsellers.trycloudflare.com/api/v1/measure \
+  -H "Authorization: Bearer abcdefg" \
+  -H "X-Measurement-Id: 01" \
+  -F "file=@debug_image_1.jpeg;type=image/jpeg"
+```
+
+결과:
+
+```json
+{
+  "measurementId": "01",
+  "status": "SUCCESS",
+  "result": {
+    "estimatedHeightCm": 78.3,
+    "heightRangeCm": null,
+    "confidence": null,
+    "quality": null,
+    "modelVersion": "h-align-has-rtmpose-head-top-v1",
+    "warnings": [],
+    "measuredAt": "2026-09-04T14:28:01Z"
+  },
+  "error": null
+}
+```
+
+확인한 계약:
+
+- Cloudflare Quick Tunnel을 통해 실제 Windows AI 서버까지 요청이 도달함
+- HTTP status는 `200 OK`
+- 요청의 `X-Measurement-Id: 01`이 `measurementId: "01"`로 그대로 반환됨
+- 실제 모델 추론 결과가 `SUCCESS`로 반환됨
+- 응답에 원본 이미지, 로컬 파일 경로, checkpoint 경로, stack trace가 없음
+
+### 5. 인증 실패
 
 ```bash
 curl -i -X POST https://soul-faced-crafts-extremely.trycloudflare.com/api/v1/measure \
@@ -201,7 +247,7 @@ HTTP/1.1 401 Unauthorized
 
 응답에는 secret 값이 포함되지 않아야 한다.
 
-### 5. RETRY 계약
+### 6. RETRY 계약
 
 ```bash
 curl -i -X POST https://soul-faced-crafts-extremely.trycloudflare.com/api/v1/measure \
@@ -225,7 +271,7 @@ curl -i -X POST https://soul-faced-crafts-extremely.trycloudflare.com/api/v1/mea
 
 카드가 없는 유효 이미지로도 `HTTP 200 + RETRY`와 `CARD_NOT_FOUND`를 확인했다.
 
-### 6. FAILED 계약
+### 7. FAILED 계약
 
 head_top checkpoint를 없는 경로로 주입해 deterministic internal failure를
 시뮬레이션했다.
@@ -317,9 +363,14 @@ No broken requirements found.
 Quick Tunnel 검증 시:
 
 ```text
-AI_SERVER_URL = https://soul-faced-crafts-extremely.trycloudflare.com
-AI_API_KEY = 승인된 비밀 전달 수단으로 별도 공유
+AI_SERVER_URL = https://flags-acne-bureau-bestsellers.trycloudflare.com
+AI_API_KEY = abcdefg
 ```
+
+`abcdefg`는 이번 Quick Tunnel 수동 검증용 임시 테스트 키다. 운영 배포,
+장기 노출, 실제 사용자 테스트 전에는 승인된 비밀 전달 수단으로 새 secret을
+공유하고 `H_ALIGN_AI_API_KEY`와 웹/Supabase 설정의 `AI_API_KEY`를 같은 값으로
+교체한다.
 
 고정 운영 전환 시:
 
@@ -330,8 +381,8 @@ AI_API_KEY = 승인된 비밀 전달 수단으로 별도 공유
 
 ## 아직 남은 확인
 
-- 실제 촬영 이미지로 `SUCCESS` 재검증
 - 웹 저장소의 비동기 측정 Worker와 hosted Supabase queue 재시도 확인
+- 웹 화면에서 실제 사용자 업로드 플로우로 `SUCCESS`/`RETRY` 확인
 - Windows AI 서버 재시작 후 대기 중인 새 측정 요청 처리 확인
 - 고정 도메인 기반 Named Tunnel 구성
 - GitHub issue `HANSABARI/jaram-height-web#3`에 검증 결과 연결
@@ -341,15 +392,16 @@ AI_API_KEY = 승인된 비밀 전달 수단으로 별도 공유
 ```markdown
 Windows GPU AI 서버 검증 결과
 
-- AI commit SHA: 360884631fb5cf0cf7b20f51e04d3c5c47168584
-- 공개 Base URL: https://soul-faced-crafts-extremely.trycloudflare.com
-- 검증 일시: 2026-09-04 22:20 KST
+- AI runtime commit SHA: 242c750
+- 공개 Base URL: https://flags-acne-bureau-bestsellers.trycloudflare.com
+- 검증 일시: 2026-09-04 23:28 KST
 - 담당자: <GitHub 사용자명>
 - 환경: Windows, NVIDIA GeForce RTX 4060 Ti, Conda env jaram-height-web
 
 검증:
 - GET /: HTTP 200
 - POST /api/v1/measure: HTTP 200 + SUCCESS
+- 실제 테스트 이미지: estimatedHeightCm 78.3
 - X-Measurement-Id echo 확인
 - heightRangeCm/confidence/quality null 확인
 - 응답에 원본 이미지, 로컬 파일 경로, checkpoint 경로, stack trace 없음
@@ -359,6 +411,7 @@ Windows GPU AI 서버 검증 결과
 
 주의:
 - 현재 Base URL은 Quick Tunnel 임시 URL이며 운영 고정 URL이 아님
-- AI_API_KEY 및 tunnel token은 공개 이슈에 기록하지 않음
-- 실제 촬영 이미지와 웹/Supabase queue E2E는 추가 검증 필요
+- `abcdefg`는 이번 수동 검증용 임시 테스트 키이며 운영 전 교체 필요
+- 실제 운영 AI_API_KEY 및 tunnel token은 공개 이슈에 기록하지 않음
+- 웹/Supabase queue E2E는 추가 검증 필요
 ```
