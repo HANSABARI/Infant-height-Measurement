@@ -8,6 +8,7 @@ HTTPS 경로를 검증한 결과를 팀에 공유하기 위한 기록이다.
 
 - 검증 일시: `2026-09-04 22:20 KST`
 - 추가 실제 이미지 검증: `2026-09-04 23:28 KST`
+- 웹 배포 화면 E2E 확인: `2026-09-05 00:50 KST`
 - AI 저장소 브랜치: `jaram-height-web`
 - AI runtime commit SHA: `242c750`
 - 운영 PC: Windows + NVIDIA GPU
@@ -18,6 +19,8 @@ HTTPS 경로를 검증한 결과를 팀에 공유하기 위한 기록이다.
   - `https://soul-faced-crafts-extremely.trycloudflare.com`
   - `https://flags-acne-bureau-bestsellers.trycloudflare.com`
 - 검증 결과: Cloudflare HTTPS 경로로 `HTTP 200 + SUCCESS` 확인
+- 웹 배포 화면에서는 측정 요청 접수까지 확인했으나, 결과 처리는
+  `QUEUED`에 머물러 추가 웹 Worker 조치가 필요함
 
 Quick Tunnel URL은 임시 주소다. 터널 프로세스를 종료하거나 다시 만들면
 주소가 바뀔 수 있으므로 운영 고정값으로 커밋하거나 장기 secret 설정에
@@ -103,7 +106,7 @@ endpoint에도 추가한 뒤 사용해야 한다.
 CMD에서 Quick Tunnel을 먼저 연다.
 
 ```cmd
-"C:\Program Files (x86)\cloudflared\cloudflared.exe" tunnel --url http://localhost:8000
+"C:\Program Files (x86)\cloudflared\cloudflared.exe" tunnel --url http://127.0.0.1:8000
 ```
 
 출력된 `https://*.trycloudflare.com` 주소를 검증용 `AI_SERVER_URL`로 사용한다.
@@ -231,7 +234,88 @@ curl -i -X POST https://flags-acne-bureau-bestsellers.trycloudflare.com/api/v1/m
 - 실제 모델 추론 결과가 `SUCCESS`로 반환됨
 - 응답에 원본 이미지, 로컬 파일 경로, checkpoint 경로, stack trace가 없음
 
-### 5. 인증 실패
+### 5. 웹 배포 화면 E2E 관찰 결과
+
+배포된 웹 화면 `https://jaram-height-web.wp230.workers.dev/measure`에서 실제
+사용자 플로우를 확인했다. 이 검증은 Swagger나 curl이 아니라 웹 화면에서
+세션 생성, 사진 업로드, 상태 화면 폴링까지 진행한 결과다.
+
+사용한 임시 설정:
+
+```text
+AI_SERVER_URL = https://flags-acne-bureau-bestsellers.trycloudflare.com
+AI_API_KEY = abcdefg
+H_ALIGN_AI_API_KEY = abcdefg
+```
+
+Cloudflare Worker runtime 변수에서 익명 테스트 제한이 낮아
+`POST /api/sessions`가 처음에는 `429 Too Many Requests`를 반환했다.
+테스트를 위해 다음 값을 높인 뒤 세션 생성은 정상화됐다.
+
+```text
+ANONYMOUS_RATE_LIMIT_MAX = 100
+ANONYMOUS_RATE_LIMIT_SESSIONS = 100
+ANONYMOUS_RATE_LIMIT_WINDOW = 3600
+```
+
+확인한 로그:
+
+```text
+POST /api/sessions -> 201 Created
+```
+
+원본 실사진(`5712x4284`, 약 5.3 MB)을 그대로 업로드했을 때는 웹 Worker의
+`POST /api/measurements`에서 다음 에러가 발생했다.
+
+```text
+Worker exceeded CPU time limit.
+```
+
+같은 이미지를 긴 변 1800px 이하, JPEG quality 82로 리사이즈해 약 470 KB로
+줄인 뒤에는 CPU limit 에러가 사라졌고 측정 요청은 접수됐다.
+
+```text
+POST /api/measurements -> 202 Accepted
+content-length: 473739
+```
+
+하지만 이후 상태 조회 응답은 계속 다음 상태에 머물렀다.
+
+```json
+{
+  "measurementId": "be87e15a-41d4-48d5-8491-de3827e478c6",
+  "status": "QUEUED",
+  "result": null,
+  "error": null
+}
+```
+
+동시에 Windows AI 서버 로그에는 웹 업로드 이후 새 요청이 들어오지 않았다.
+
+```text
+POST /api/v1/measure
+```
+
+따라서 현재 웹 화면 E2E의 병목은 AI 서버나 Quick Tunnel이 아니라,
+`jaram-height-web`의 `/api/measurements` 이후 `QUEUED` measurement를 실제
+AI 호출로 넘기는 background worker, self-binding, async trigger, 또는 동등한
+비동기 처리 경로에 있다.
+
+웹 팀 전달 문구:
+
+```text
+Windows AI 서버와 Quick Tunnel은 정상입니다.
+AI 서버 root는 200 OK이고, curl로 /api/v1/measure 호출 시 SUCCESS 응답도 확인했습니다.
+
+웹 E2E에서는 작은 이미지 업로드 후 POST /api/measurements가 202 Accepted로 성공합니다.
+하지만 이후 GET /api/measurements/{id} 응답이 계속 status=QUEUED, result=null, error=null입니다.
+AI 서버에는 POST /api/v1/measure 요청이 들어오지 않습니다.
+
+따라서 문제는 AI 서버가 아니라 jaram-height-web 쪽에서 QUEUED measurement를 처리하는
+background worker / self-binding / async trigger가 실행되지 않는 부분으로 보입니다.
+```
+
+### 6. 인증 실패
 
 ```bash
 curl -i -X POST https://soul-faced-crafts-extremely.trycloudflare.com/api/v1/measure \
@@ -247,7 +331,7 @@ HTTP/1.1 401 Unauthorized
 
 응답에는 secret 값이 포함되지 않아야 한다.
 
-### 6. RETRY 계약
+### 7. RETRY 계약
 
 ```bash
 curl -i -X POST https://soul-faced-crafts-extremely.trycloudflare.com/api/v1/measure \
@@ -271,7 +355,7 @@ curl -i -X POST https://soul-faced-crafts-extremely.trycloudflare.com/api/v1/mea
 
 카드가 없는 유효 이미지로도 `HTTP 200 + RETRY`와 `CARD_NOT_FOUND`를 확인했다.
 
-### 7. FAILED 계약
+### 8. FAILED 계약
 
 head_top checkpoint를 없는 경로로 주입해 deterministic internal failure를
 시뮬레이션했다.
@@ -381,8 +465,9 @@ AI_API_KEY = abcdefg
 
 ## 아직 남은 확인
 
-- 웹 저장소의 비동기 측정 Worker와 hosted Supabase queue 재시도 확인
-- 웹 화면에서 실제 사용자 업로드 플로우로 `SUCCESS`/`RETRY` 확인
+- 웹 저장소에서 `QUEUED` measurement를 처리하는 background worker,
+  self-binding, async trigger 경로 확인
+- 웹 화면에서 실제 사용자 업로드 플로우로 최종 `SUCCESS`/`RETRY` 확인
 - Windows AI 서버 재시작 후 대기 중인 새 측정 요청 처리 확인
 - 고정 도메인 기반 Named Tunnel 구성
 - GitHub issue `HANSABARI/jaram-height-web#3`에 검증 결과 연결
@@ -413,5 +498,8 @@ Windows GPU AI 서버 검증 결과
 - 현재 Base URL은 Quick Tunnel 임시 URL이며 운영 고정 URL이 아님
 - `abcdefg`는 이번 수동 검증용 임시 테스트 키이며 운영 전 교체 필요
 - 실제 운영 AI_API_KEY 및 tunnel token은 공개 이슈에 기록하지 않음
-- 웹/Supabase queue E2E는 추가 검증 필요
+- 웹 화면 E2E는 POST /api/measurements 202 Accepted까지 확인됨
+- 현재 GET /api/measurements/{id}는 status=QUEUED, result=null, error=null 상태로 유지됨
+- AI 서버에는 웹 화면 업로드 이후 POST /api/v1/measure 요청이 들어오지 않음
+- 웹/Supabase background processing 또는 async trigger 조치가 필요함
 ```

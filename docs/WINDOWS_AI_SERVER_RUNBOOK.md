@@ -44,10 +44,10 @@ $env:H_ALIGN_AI_API_KEY = "<shared-ai-api-key>"
 For a temporary Quick Tunnel:
 
 ```cmd
-"C:\Program Files (x86)\cloudflared\cloudflared.exe" tunnel --url http://localhost:8000
+"C:\Program Files (x86)\cloudflared\cloudflared.exe" tunnel --url http://127.0.0.1:8000
 ```
 
-Keep that terminal open. The printed `https://*.trycloudflare.com` URL forwards to `http://localhost:8000` on this PC.
+Keep that terminal open. The printed `https://*.trycloudflare.com` URL forwards to `http://127.0.0.1:8000` on this PC.
 
 For a stable production URL, the Cloudflare account needs a DNS zone. Add a published application route:
 
