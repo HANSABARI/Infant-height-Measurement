@@ -116,7 +116,8 @@ The derived annotations are written beside the merged annotations as
 `person_keypoints_head_top_val.json`. Training output and the resolved
 `rtmpose_head_top_runtime.py` are written under `--work-dir`. The server does
 not depend on that generated config: it uses the tracked inference config at
-`app/configs/rtmpose_head_top.py` by default.
+`app/configs/rtmpose_head_top.py` by default. For deployment, copy the selected
+checkpoint into `app/models/rtmpose_infant_head_top/`.
 
 ## Inference checkpoint
 
@@ -124,7 +125,7 @@ The `/api/v1/measure` endpoint loads the best local head_top-only checkpoint
 by default:
 
 ```text
-work_dirs/rtmpose_infant_head_top_only/best_coco_AP_epoch_*.pth
+app/models/rtmpose_infant_head_top/best_coco_AP_epoch_*.pth
 ```
 
 The best epoch is selected automatically, so its filename does not need to end

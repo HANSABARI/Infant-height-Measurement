@@ -27,8 +27,10 @@ h-align-server/
 │   │   ├── height_calculator.py  # Physical height calculation logic
 │   │   └── visualizer.py         # Drawing bounding boxes and skeletons
 │   └── models/                   # Pre-trained weights and config files
-│       └── has_image_0209_fp32/
-│           └── sensitive_seg_best.pt # Git ignored; auto-downloadable from Hugging Face
+│       ├── has_image_0209_fp32/
+│       │   └── sensitive_seg_best.pt # Git ignored; auto-downloadable from Hugging Face
+│       └── rtmpose_infant_head_top/
+│           └── best_coco_AP_epoch_*.pth # Git ignored; local deployment checkpoint
 ├── dataset/                      # (Git Ignored) Training image datasets
 └── debug_images/                 # (Git Ignored) Saved debug visualization images
 ```
@@ -100,7 +102,23 @@ API Documentation (Swagger UI): http://127.0.0.1:8000/docs
 
 Main Endpoint: `POST /api/v1/measure`
 
-Debug Endpoint (Saves image locally): POST /api/v1/measure/debug
+Debug Endpoint (local development only): `POST /api/v1/measure/debug`
+is disabled unless `H_ALIGN_ENABLE_DEBUG_API=1`.
+
+On the Windows GPU PC, PyCharm Git Bash may not expose the Conda env `Scripts`
+directory on `PATH`. Use the env Python directly or run:
+
+```bash
+export H_ALIGN_AI_API_KEY='<shared-ai-api-key>'
+bash scripts/run_ai_server_git_bash.sh
+```
+
+The server sets Ultralytics runtime settings under `app/.runtime/ultralytics`
+when `YOLO_CONFIG_DIR` is not already set, so it does not depend on a
+particular Windows user's Roaming profile.
+
+For the Windows/Cloudflare operation checklist, see
+[`docs/WINDOWS_AI_SERVER_RUNBOOK.md`](docs/WINDOWS_AI_SERVER_RUNBOOK.md).
 
 ### jaram-height-web Worker connection
 
@@ -158,6 +176,12 @@ python scripts/train_rtmpose_head_top.py \
   --batch-size 8 \
   --num-workers 0 \
   --work-dir work_dirs/rtmpose_infant_head_top_only
+```
+
+For server deployment, place the selected checkpoint under:
+
+```text
+app/models/rtmpose_infant_head_top/best_coco_AP_epoch_*.pth
 ```
 
 Use `--checkpoint /path/to/checkpoint.pth` to continue from an existing

@@ -17,6 +17,9 @@ __pycache__/
 app/models/*.pt
 debug_images/
 *.pth
+app/models/**/*.log
+app/models/**/last_checkpoint
+app/models/**/vis_data/
 
 # 맥(Mac) 시스템 파일 (필수!)
 .DS_Store
@@ -28,6 +31,7 @@ debug_images/
 mmdetection/
 mmdeploy/
 runs/
+app/.runtime/
 
 # Local-only AI development artifacts. They remain on this machine.
 /dataset.zip

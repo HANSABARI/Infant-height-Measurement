@@ -1,4 +1,10 @@
+import os
+from pathlib import Path
+import sys
+import tempfile
+import types
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 
@@ -250,6 +256,33 @@ class HaSCardDetectorTests(unittest.TestCase):
             tile_mask,
         )
         self.assertEqual(int(geometry_masks[0].sum()), int(tile_mask.sum()))
+
+    def test_load_model_uses_project_local_ultralytics_config_dir_when_env_missing(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            model_path = Path(temp_dir) / "sensitive_seg_best.pt"
+            model_path.write_bytes(b"fake weights")
+            yolo_calls = []
+
+            class FakeYolo:
+                def __init__(self, path):
+                    yolo_calls.append((path, os.environ.get("YOLO_CONFIG_DIR")))
+
+            fake_ultralytics = types.SimpleNamespace(YOLO=FakeYolo)
+
+            with patch.dict(sys.modules, {"ultralytics": fake_ultralytics}):
+                with patch.dict(os.environ, {}, clear=False):
+                    os.environ.pop("YOLO_CONFIG_DIR", None)
+
+                    detector = HaSCardDetector(model_path=str(model_path))
+
+            project_root = Path(__file__).resolve().parents[1]
+            expected_config_dir = project_root / "app" / ".runtime" / "ultralytics"
+            self.assertIsInstance(detector.model, FakeYolo)
+            self.assertEqual(
+                yolo_calls,
+                [(str(model_path), str(expected_config_dir))],
+            )
+            self.assertTrue(expected_config_dir.exists())
 
 
 if __name__ == "__main__":

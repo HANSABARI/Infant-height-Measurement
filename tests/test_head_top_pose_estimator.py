@@ -1,9 +1,16 @@
 import unittest
 import tempfile
+import importlib.util
+import sys
+import types
+from unittest.mock import patch
 from pathlib import Path
 from runpy import run_path
 
 import numpy as np
+
+if importlib.util.find_spec("rtmlib") is None:
+    sys.modules["rtmlib"] = types.SimpleNamespace(Wholebody=lambda *args, **kwargs: None)
 
 from app.services.head_top_pose_estimator import (
     HEAD_TOP_KEYPOINT_NAME,
@@ -36,6 +43,11 @@ class _FakeDataSample:
         self.pred_instances = _FakePredInstances(point, score)
 
 
+class _CapturingPoseEstimator:
+    def __init__(self, device):
+        self.device = device
+
+
 class HeadTopPoseEstimatorTests(unittest.TestCase):
     def test_uses_the_packaged_runtime_config_by_default(self):
         estimator = HeadTopPoseEstimator(
@@ -49,6 +61,42 @@ class HeadTopPoseEstimatorTests(unittest.TestCase):
             estimator.config_path,
             project_root / "app" / "configs" / "rtmpose_head_top.py",
         )
+
+    def test_uses_packaged_head_top_checkpoint_dir_by_default(self):
+        estimator = HeadTopPoseEstimator(
+            model=object(),
+            person_proposer=_FakePersonProposer(),
+            inference_fn=lambda *args, **kwargs: [],
+        )
+
+        project_root = Path(__file__).resolve().parents[1]
+        expected_dir = project_root / "app" / "models" / "rtmpose_infant_head_top"
+        self.assertEqual(estimator.default_work_dir, expected_dir)
+        self.assertEqual(estimator.checkpoint_path.parent, expected_dir)
+
+    def test_default_device_prefers_cuda_when_available(self):
+        fake_torch = types.SimpleNamespace(
+            cuda=types.SimpleNamespace(is_available=lambda: True),
+            backends=types.SimpleNamespace(
+                mps=types.SimpleNamespace(is_available=lambda: False)
+            ),
+        )
+
+        with patch.dict(sys.modules, {"torch": fake_torch}):
+            self.assertEqual(HeadTopPoseEstimator._default_device(), "cuda")
+
+    def test_default_person_proposer_uses_selected_device(self):
+        with patch(
+            "app.services.head_top_pose_estimator.PoseEstimator",
+            _CapturingPoseEstimator,
+        ):
+            estimator = HeadTopPoseEstimator(
+                device="cuda",
+                model=object(),
+                inference_fn=lambda *args, **kwargs: [],
+            )
+
+        self.assertEqual(estimator.person_proposer.device, "cuda")
 
     def test_packaged_runtime_config_keeps_the_inference_pipeline(self):
         project_root = Path(__file__).resolve().parents[1]

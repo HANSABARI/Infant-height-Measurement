@@ -20,6 +20,7 @@ MEASUREMENT_CARD_CLASS_NAMES = ("id_card", "bank_card")
 DEFAULT_HAS_REPO_ID = "xuanwulab/HaS_Image_0209_FP32"
 DEFAULT_HAS_MODEL_NAME = "HaS Image Model (FP32)"
 DEFAULT_HAS_MODEL_FILENAME = "sensitive_seg_best.pt"
+ULTRALYTICS_CONFIG_DIR_ENV = "YOLO_CONFIG_DIR"
 
 
 class HaSCardDetector:
@@ -223,6 +224,7 @@ class HaSCardDetector:
 
     def _load_model(self):
         model_path = self._resolve_model_path()
+        _ensure_ultralytics_config_dir()
         try:
             from ultralytics import YOLO
         except ImportError as exc:
@@ -305,3 +307,12 @@ def _to_numpy(value) -> np.ndarray:
     if hasattr(value, "numpy"):
         value = value.numpy()
     return np.asarray(value)
+
+
+def _ensure_ultralytics_config_dir() -> None:
+    if os.getenv(ULTRALYTICS_CONFIG_DIR_ENV):
+        return
+
+    config_dir = Path(__file__).resolve().parents[1] / ".runtime" / "ultralytics"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    os.environ[ULTRALYTICS_CONFIG_DIR_ENV] = str(config_dir)

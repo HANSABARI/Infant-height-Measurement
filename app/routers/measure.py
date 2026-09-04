@@ -25,6 +25,8 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 AI_API_KEY_ENV = "H_ALIGN_AI_API_KEY"
+DEBUG_API_ENABLED_ENV = "H_ALIGN_ENABLE_DEBUG_API"
+DEBUG_DIR_ENV = "H_ALIGN_DEBUG_DIR"
 
 CARD_NOT_FOUND_MESSAGE = "참조 카드를 찾지 못했습니다. 카드가 전체 보이도록 다시 촬영해주세요."
 INVALID_IMAGE_MESSAGE = "이미지 파일을 읽지 못했습니다. 다른 사진으로 다시 촬영해주세요."
@@ -43,7 +45,6 @@ print("--- ✅ AI 모델 로딩 완료 ---")
 
 # 디버그 이미지가 저장될 폴더 설정
 DEBUG_DIR = "debug_images"
-os.makedirs(DEBUG_DIR, exist_ok=True)  # 폴더 없으면 자동 생성
 
 
 # =========================================================
@@ -140,23 +141,38 @@ def _verify_ai_credentials(authorization: Optional[str]) -> None:
         )
 
     scheme, _, token = (authorization or "").partition(" ")
-    if scheme.lower() != "bearer" or not token or not hmac.compare_digest(token, expected_api_key):
+    if (
+        scheme.lower() != "bearer"
+        or not token
+        or not _constant_time_text_equals(token, expected_api_key)
+    ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid AI server credentials",
         )
 
 
+def _constant_time_text_equals(left: str, right: str) -> bool:
+    return hmac.compare_digest(left.encode("utf-8"), right.encode("utf-8"))
+
+
+def _debug_api_enabled() -> bool:
+    return os.getenv(DEBUG_API_ENABLED_ENV, "0").lower() in {"1", "true", "yes", "on"}
+
+
 # =========================================================
 # 2. [Debug] 디버깅용 API (이미지 파일 저장용)
 # =========================================================
-@router.post("/measure/debug")
+@router.post("/measure/debug", include_in_schema=False)
 async def measure_debug_save(file: UploadFile = File(...)):
     """
     [Test] 분석 결과를 시각화하여 서버 폴더(debug_images)에 저장
     - 팀원 공유용 또는 모델 성능 확인용
     - 반환값: 저장된 파일 경로 및 분석 요약
     """
+    if not _debug_api_enabled():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not Found")
+
     # 1. 이미지 읽기
     contents = await file.read()
     nparr = np.frombuffer(contents, np.uint8)
@@ -183,7 +199,9 @@ async def measure_debug_save(file: UploadFile = File(...)):
     # 파일명: debug_20260212_123000.jpg 형식
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"debug_{timestamp}.jpg"
-    save_path = os.path.join(DEBUG_DIR, filename)
+    debug_dir = os.getenv(DEBUG_DIR_ENV, DEBUG_DIR)
+    os.makedirs(debug_dir, exist_ok=True)
+    save_path = os.path.join(debug_dir, filename)
 
     # OpenCV로 이미지 저장
     cv2.imwrite(save_path, debug_img)
@@ -194,7 +212,6 @@ async def measure_debug_save(file: UploadFile = File(...)):
         "success": True,
         "message": "이미지가 서버에 저장되었습니다.",
         "file_name": filename,
-        "saved_path": os.path.abspath(save_path),
         "ai_analysis": {
             "card_detected": card_result["detected"],
             "card_conf": card_result["confidence"],
@@ -211,7 +228,6 @@ async def measure_debug_save(file: UploadFile = File(...)):
             "person_conf": pose_result["confidence"],
             "person_reason": pose_result.get("reason"),
             "person_model": pose_result.get("model"),
-            "person_checkpoint": pose_result.get("checkpoint"),
             "person_bbox": pose_result.get("bbox"),
             "head_top": (
                 np.asarray(pose_result["keypoints"]["head_top"]).tolist()

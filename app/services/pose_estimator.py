@@ -2,6 +2,11 @@ from rtmlib import Wholebody
 import numpy as np
 import cv2
 import os
+from pathlib import Path
+
+
+_ONNXRUNTIME_DLL_DIRECTORY_HANDLES = []
+_ONNXRUNTIME_DLL_DIRECTORIES = set()
 
 
 class PoseEstimator:
@@ -13,6 +18,8 @@ class PoseEstimator:
         """
         self.device = device
         print(f"Loading RTMPose-WholeBody model via rtmlib on {self.device.upper()}...")
+        if self.device.lower().startswith("cuda"):
+            self._preload_onnxruntime_cuda_dlls()
 
         # mode: 'balanced'(기본), 'performance'(정확도 위주), 'lightweight'(속도 위주)
         self.pose = Wholebody(
@@ -99,6 +106,50 @@ class PoseEstimator:
         if x_max <= x_min or y_max <= y_min:
             return []
         return [float(x_min), float(y_min), float(x_max), float(y_max)]
+
+    @staticmethod
+    def _preload_onnxruntime_cuda_dlls() -> None:
+        try:
+            import torch
+        except ImportError:
+            torch = None
+
+        if torch is not None:
+            PoseEstimator._add_torch_dll_directory(torch)
+
+        try:
+            import onnxruntime
+        except ImportError:
+            return
+
+        preload_dlls = getattr(onnxruntime, "preload_dlls", None)
+        if preload_dlls is not None:
+            preload_dlls()
+
+    @staticmethod
+    def _add_torch_dll_directory(torch_module) -> None:
+        if os.name != "nt" or not hasattr(os, "add_dll_directory"):
+            return
+
+        torch_file = getattr(torch_module, "__file__", None)
+        if not torch_file:
+            return
+
+        torch_lib_dir = Path(torch_file).resolve().parent / "lib"
+        if not torch_lib_dir.is_dir():
+            return
+
+        torch_lib_path = str(torch_lib_dir)
+        if torch_lib_path not in _ONNXRUNTIME_DLL_DIRECTORIES:
+            _ONNXRUNTIME_DLL_DIRECTORY_HANDLES.append(
+                os.add_dll_directory(torch_lib_path)
+            )
+            _ONNXRUNTIME_DLL_DIRECTORIES.add(torch_lib_path)
+
+        path_parts = [part for part in os.environ.get("PATH", "").split(os.pathsep) if part]
+        known_paths = {part.lower() for part in path_parts}
+        if torch_lib_path.lower() not in known_paths:
+            os.environ["PATH"] = os.pathsep.join([torch_lib_path] + path_parts)
 
 
 # --- 테스트 코드 ---

@@ -5,6 +5,7 @@ torchvision==0.16.0
 numpy==1.26.4
 
 # OpenMMLab (서로 찰떡인 버전들)
+setuptools==80.9.0
 mmengine==0.10.7
 # 에러 발생시 수동 설치(cpu) pip install mmcv==2.1.0 -f https://download.openmmlab.com/mmcv/dist/cpu/torch2.1.0/index.html
 #  에러 발생시 수동 설치(gpu) pip install mmcv==2.1.0 -f https://download.openmmlab.com/mmcv/dist/cu121/torch2.1.0/index.html
@@ -22,7 +23,10 @@ chumpy==0.70
 
 # 웹 서버 및 유틸리티
 fastapi==0.135.3
+python-multipart==0.0.20
 uvicorn[standard]==0.43.0
 rtmlib==0.0.15
+# CUDA 12 wheel for Windows/Python 3.10. The PyPI 1.18.0 wheel targets CUDA 11.x.
+onnxruntime-gpu @ https://aiinfra.pkgs.visualstudio.com/2692857e-05ef-43b4-ba9c-ccf1c22c437c/_packaging/9387c3aa-d9ad-4513-968c-383f6f7f53b8/pypi/download/onnxruntime-gpu/1.18.0/onnxruntime_gpu-1.18.0-cp310-cp310-win_amd64.whl
 
 # rtm 모델 학습을 위해선 mmdetection 설치 필요.

@@ -40,7 +40,7 @@ class HeadTopPoseEstimator:
         min_head_top_score: Optional[float] = None,
     ):
         project_root = Path(__file__).resolve().parents[2]
-        default_work_dir = project_root / "work_dirs" / "rtmpose_infant_head_top_only"
+        default_work_dir = project_root / "app" / "models" / "rtmpose_infant_head_top"
         default_config = project_root / "app" / "configs" / "rtmpose_head_top.py"
         default_checkpoint = self.find_best_checkpoint(default_work_dir) or (
             default_work_dir / "best_coco_AP_epoch_100.pth"
@@ -56,7 +56,7 @@ class HeadTopPoseEstimator:
         self.uses_default_checkpoint = checkpoint_override is None
         self.default_work_dir = default_work_dir
         self.checkpoint_path = Path(checkpoint_override or default_checkpoint)
-        self.person_proposer = person_proposer or PoseEstimator(device="cpu")
+        self.person_proposer = person_proposer or PoseEstimator(device=self.device)
         self.min_head_top_score = (
             min_head_top_score
             if min_head_top_score is not None
@@ -113,9 +113,11 @@ class HeadTopPoseEstimator:
         try:
             import torch
 
+            if torch.cuda.is_available():
+                return "cuda"
             if torch.backends.mps.is_available():
                 return "mps"
-        except ImportError:
+        except (AttributeError, ImportError):
             pass
         return "cpu"
 
