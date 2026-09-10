@@ -1,55 +1,80 @@
 import numpy as np
-import math
 
 
 class HeightCalculator:
+    REQUIRED_TORSO_POINTS = (
+        "head_top",
+        "left_shoulder",
+        "right_shoulder",
+        "left_hip",
+        "right_hip",
+    )
+
+    @staticmethod
+    def _point(keypoints: dict, name: str):
+        point = keypoints.get(name)
+        if point is None:
+            return None
+        point = np.asarray(point, dtype=np.float32).reshape(-1)
+        if point.size < 2 or not np.isfinite(point[:2]).all():
+            return None
+        if np.allclose(point[:2], 0.0):
+            return None
+        return point[:2]
+
+    def _leg_length(self, keypoints: dict, side: str):
+        names = (f"{side}_hip", f"{side}_knee", f"{side}_ankle", f"{side}_heel")
+        points = [self._point(keypoints, name) for name in names]
+        if any(point is None for point in points):
+            return None
+        return sum(np.linalg.norm(points[index] - points[index + 1]) for index in range(3))
+
     def calculate(self, keypoints: dict, px_per_cm: float) -> dict:
         """
-        키포인트와 비율(px_per_cm)을 받아 최종 키를 계산
+        실제 head_top 및 heel 키포인트와 카드 비율(px_per_cm)로 신장을 계산합니다.
         """
         if px_per_cm <= 0:
             return {"height_cm": 0, "error": "Invalid px_per_cm"}
 
-        # 1. 머리 끝(Head Top) 추정 (COCO 모델은 정수리가 없음 -> 코에서 추정)
-        # 코와 목(양 어깨 중점) 사이 거리만큼 코 위로 더해줌
-        nose = keypoints["nose"]
-        shoulder_center = (keypoints["left_shoulder"] + keypoints["right_shoulder"]) / 2
+        points = {
+            name: self._point(keypoints, name) for name in self.REQUIRED_TORSO_POINTS
+        }
+        missing_torso = [name for name, point in points.items() if point is None]
+        if missing_torso:
+            return {
+                "height_cm": 0,
+                "error": f"Missing required keypoints: {', '.join(missing_torso)}",
+            }
 
-        neck_len_px = np.linalg.norm(nose - shoulder_center)
-        # 영아는 머리가 크므로 1.5배 정도 보정
-        head_top = nose - (shoulder_center - nose) * 0.8
+        shoulder_center = (points["left_shoulder"] + points["right_shoulder"]) / 2
+        hip_center = (points["left_hip"] + points["right_hip"]) / 2
+        head_length_px = np.linalg.norm(points["head_top"] - shoulder_center)
+        torso_length_px = np.linalg.norm(shoulder_center - hip_center)
 
-        # 2. 세그먼트별 길이 합산 (다리 펴기)
-        # (1) 머리끝 ~ 목
-        seg1 = np.linalg.norm(head_top - shoulder_center)
+        leg_lengths = [
+            leg_length
+            for leg_length in (
+                self._leg_length(keypoints, "left"),
+                self._leg_length(keypoints, "right"),
+            )
+            if leg_length is not None
+        ]
+        if not leg_lengths:
+            return {
+                "height_cm": 0,
+                "error": "Missing a complete hip-knee-ankle-heel leg chain",
+            }
 
-        # (2) 목 ~ 엉덩이 중점 (몸통)
-        hip_center = (keypoints["left_hip"] + keypoints["right_hip"]) / 2
-        seg2 = np.linalg.norm(shoulder_center - hip_center)
-
-        # (3) 다리 길이 (더 긴 쪽 선택 - 쭉 뻗은 다리가 정확함)
-        left_leg = (np.linalg.norm(keypoints["left_hip"] - keypoints["left_knee"]) +
-                    np.linalg.norm(keypoints["left_knee"] - keypoints["left_ankle"]))
-
-        right_leg = (np.linalg.norm(keypoints["right_hip"] - keypoints["right_knee"]) +
-                     np.linalg.norm(keypoints["right_knee"] - keypoints["right_ankle"]))
-
-        seg3 = max(left_leg, right_leg)
-
-        # (4) 발목 ~ 발바닥 보정 (약 3~4cm 추가)
-        # YOLOv8-pose는 발끝 점이 없으므로 상수로 보정
-        foot_correction_cm = 3.5
-        foot_correction_px = foot_correction_cm * px_per_cm
-
-        # 3. 최종 합산
-        total_px = seg1 + seg2 + seg3 + foot_correction_px
+        leg_length_px = max(leg_lengths)
+        total_px = head_length_px + torso_length_px + leg_length_px
         height_cm = total_px / px_per_cm
 
         return {
             "height_cm": round(height_cm, 1),
             "segments": {
-                "head": round(seg1 / px_per_cm, 1),
-                "torso": round(seg2 / px_per_cm, 1),
-                "leg": round(seg3 / px_per_cm, 1)
-            }
+                "head": round(head_length_px / px_per_cm, 1),
+                "torso": round(torso_length_px / px_per_cm, 1),
+                "leg": round(leg_length_px / px_per_cm, 1),
+                "foot": 0.0,
+            },
         }

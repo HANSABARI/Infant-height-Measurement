@@ -2,6 +2,7 @@
 venv/
 .venv/
 grow_up/
+jaram/
 
 # 파이참 설정
 .idea/
@@ -15,10 +16,11 @@ __pycache__/
 *.onnx
 app/models/*.pt
 debug_images/
+*.pth
+app/models/**/*.log
+app/models/**/last_checkpoint
+app/models/**/vis_data/
 
 # 맥(Mac) 시스템 파일 (필수!)
 .DS_Store
-markdown
-dataset/
-mmdeploy/
-*.pth
+

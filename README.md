@@ -1,0 +1,192 @@
+# 📏 h-align-server (nana-AI)
+
+------------------------------------------------------------------------------------------------------------------------
+An AI-powered FastAPI backend server that calculates a person's actual height from an image. 
+The pipeline relies on detecting a standard-sized reference object (a credit card) and extracting human body keypoints.
+
+## 🌟 Core AI Pipeline
+1. **Card Segmentation (HaS Image Model FP32):** Detects sensitive-document classes, but uses only standard `id_card` and `bank_card` masks to calculate the `pixel-per-cm` ratio from their 8.56cm long side. Passports and employee badges are not valid scale references.
+2. **Pose Estimation:** Keeps 13 existing WholeBody keypoints from ONNX Runtime (`rtmlib`) and adds only `head_top` from a separately trained one-keypoint RTMPose model.
+3. **Height Calculation:** Combines the skeleton data and the pixel ratio to estimate the actual physical height.
+
+## 📂 Project Structure
+
+```text
+h-align-server/
+├── requirements.txt              # Core Python dependencies
+├── app/                          # Main Application Directory
+│   ├── main.py                   # FastAPI application entry point
+│   ├── routers/                  # API endpoints (/measure, /measure/debug)
+│   ├── schemas/                  # Pydantic models for request/response
+│   ├── services/                 # AI & Business Logic
+│   │   ├── card_detector_has.py  # HaS Image Model FP32 segmentation inference
+│   │   ├── card_geometry.py      # Mask geometry and pixel-per-cm helpers
+│   │   ├── card_detector_rtm.py  # Previous RTMDet Inference path
+│   │   ├── pose_estimator.py     # Existing WholeBody keypoints
+│   │   ├── head_top_pose_estimator.py # WholeBody + head_top fusion
+│   │   ├── height_calculator.py  # Physical height calculation logic
+│   │   └── visualizer.py         # Drawing bounding boxes and skeletons
+│   └── models/                   # Pre-trained weights and config files
+│       ├── has_image_0209_fp32/
+│       │   └── sensitive_seg_best.pt # Git ignored; auto-downloadable from Hugging Face
+│       └── rtmpose_infant_head_top/
+│           └── best_coco_AP_epoch_*.pth # Git ignored; local deployment checkpoint
+├── dataset/                      # (Git Ignored) Training image datasets
+└── debug_images/                 # (Git Ignored) Saved debug visualization images
+```
+
+⚙️ Installation Guide (macOS Apple Silicon / MPS)
+⚠️ CRITICAL NOTE FOR MAC USERS (M1/M2/M3):
+Do NOT install mmcv via requirements.txt. To prevent C++ custom operation (e.g., NMS) 
+compilation errors on Apple Silicon, you must install the OpenMMLab libraries exactly as outlined in Step 2.
+
+Step 1. Install Basic Requirements
+Make sure you have Python 3.10.x installed. Create a virtual environment and install the core dependencies:
+
+```Bash
+pip install -r requirements.txt
+```
+
+Step 2. Install OpenMMLab Core Libraries
+Execute the following commands in your terminal in this exact order to install the exact versions compatible with this project:
+
+
+# 1. Install MMCV with operations disabled (Crucial for Apple Silicon)
+
+```Bash
+MMCV_WITH_OPS=0 mim install "mmcv==2.1.0"
+```
+
+# 2. Install MMDetection and MMPose
+```Bash
+mim install "mmdet==3.2.0"
+mim install "mmengine==0.10.7"
+mim install "mmpose==1.3.2"
+# mmpose chumpy error:
+pip install chumpy --no-build-isolation
+```
+
+### HaS Image Model FP32 card segmentation weights
+
+The server uses `xuanwulab/HaS_Image_0209_FP32` (`HaS Image Model (FP32)`) by default. Its architecture is YOLO11 instance segmentation.
+
+- Default local path: `app/models/has_image_0209_fp32/sensitive_seg_best.pt`
+- Override path: `CARD_HAS_MODEL=/path/to/sensitive_seg_best.pt`
+- Disable startup auto-download: `CARD_HAS_AUTO_DOWNLOAD=0`
+- Optional device override: `CARD_HAS_DEVICE=cuda:0`
+- Optional inference size override: `CARD_HAS_IMGSZ=1920`
+
+🚨 Known Issues & Workarounds
+1. PyTorch 2.6+ Security Policy (torch.load UnpicklingError)
+Starting from PyTorch 2.6, the default behavior of torch.load has been restricted (weights_only=True by default) for security reasons.
+Loading OpenMMLab weights (.pth) will trigger an UnpicklingError due to embedded numpy objects and history buffers.
+
+Solution Applied: The previous RTMDet path keeps its monkey-patching workaround inside app/services/card_detector_rtm.py.
+The active HaS Image path uses Ultralytics and does not require the RTMDet config/checkpoint pair.
+
+
+2. Training on Mac (MPS NMS Limitation)
+If you wish to retrain the RTMDet model on an Apple Silicon Mac, note that PyTorch's MPS backend currently does not support the nms (Non-Maximum Suppression) operation.
+Solution Applied: In the training config (rtmdet_nano_card.py), validation (val_cfg) and testing (test_cfg) are explicitly disabled (None) to prevent crashes during the training loop.
+
+🚀 Usage
+Start the FastAPI server locally:
+
+```Bash
+uvicorn app.main:app --reload
+```
+
+The server will be available at http://127.0.0.1:8000.
+
+API Documentation (Swagger UI): http://127.0.0.1:8000/docs
+
+Main Endpoint: `POST /api/v1/measure`
+
+Debug Endpoint (local development only): `POST /api/v1/measure/debug`
+is disabled unless `H_ALIGN_ENABLE_DEBUG_API=1`.
+
+On the Windows GPU PC, PyCharm Git Bash may not expose the Conda env `Scripts`
+directory on `PATH`. Use the env Python directly or run:
+
+```bash
+export H_ALIGN_AI_API_KEY='<shared-ai-api-key>'
+bash scripts/run_ai_server_git_bash.sh
+```
+
+The server sets Ultralytics runtime settings under `app/.runtime/ultralytics`
+when `YOLO_CONFIG_DIR` is not already set, so it does not depend on a
+particular Windows user's Roaming profile.
+
+For the Windows/Cloudflare operation checklist, see
+[`docs/WINDOWS_AI_SERVER_RUNBOOK.md`](docs/WINDOWS_AI_SERVER_RUNBOOK.md).
+
+### jaram-height-web Worker connection
+
+The main endpoint follows the `jaram-height-web` AI contract. It accepts a
+normalized image in `file`, `X-Measurement-Id`, and a Bearer token. It returns
+only the estimated height, range, confidence, quality, warnings, and model
+version; internal card and pose diagnostics are not returned.
+
+Set a shared key before starting the server:
+
+```bash
+export H_ALIGN_AI_API_KEY='<shared-ai-api-key>'
+uvicorn app.main:app --reload
+```
+
+Configure the same value as `AI_API_KEY` in the `jaram-height-web` Edge
+Function secrets. The detailed contract is in
+[`docs/H_ALIGN_API_SPEC.md`](docs/H_ALIGN_API_SPEC.md).
+
+### Infant dataset merge and RTMPose fine-tuning
+
+The current infant keypoint data can be merged from the extracted directories
+under `dataset/infant_dataset_skel/splits`. The merger scans only immediate
+directories whose names end with a part/range pattern such as
+`part01_0001-0168`; ZIP files are ignored.
+
+```bash
+python scripts/merge_infant_keypoint_datasets.py
+```
+
+This creates `dataset/infant_dataset_skel/merged` with copied images and
+`person_keypoints_train.json` / `person_keypoints_val.json`. When another
+compatible directory is added to `splits`, run the same command again to
+regenerate the complete merged dataset.
+
+The height API preserves existing WholeBody joints and trains a separate
+single-keypoint model only for `head_top`. Before a long run, generate the
+derived one-keypoint annotations and validate the configuration:
+
+```bash
+python scripts/train_rtmpose_head_top.py \
+  --dry-run \
+  --device mps \
+  --epochs 100 \
+  --batch-size 8 \
+  --num-workers 0
+```
+
+Start the head_top-only fine-tuning run:
+
+```bash
+python scripts/train_rtmpose_head_top.py \
+  --device mps \
+  --epochs 100 \
+  --batch-size 8 \
+  --num-workers 0 \
+  --work-dir work_dirs/rtmpose_infant_head_top_only
+```
+
+For server deployment, place the selected checkpoint under:
+
+```text
+app/models/rtmpose_infant_head_top/best_coco_AP_epoch_*.pth
+```
+
+Use `--checkpoint /path/to/checkpoint.pth` to continue from an existing
+compatible head_top-only checkpoint. The old `train_rtmpose_infant.py` remains
+available for experiments that intentionally re-train the complete 14-keypoint
+schema. See
+`docs/INFANT_RTMPOSE_TRAINING.md` for all options and validation details.
+------------------------------------------------------------------------------------------------------------------------
